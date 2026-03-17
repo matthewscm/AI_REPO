@@ -14,6 +14,8 @@ find_package(OpenCV REQUIRED)
 
 # Add your executable
 add_executable(camera_node src/camera_node.cpp)
+add_executable(bottle_publisher src/bottle_publisher.cpp)
+
 
 # Link dependencies
 ament_target_dependencies(camera_node
@@ -23,8 +25,16 @@ ament_target_dependencies(camera_node
   OpenCV
 )
 
+ament_target_dependencies(bottle_publisher
+  rclcpp
+  std_msgs
+)
+
 # Install the executable
 install(TARGETS camera_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+install(TARGETS bottle_publisher
   DESTINATION lib/${PROJECT_NAME}
 )
 
