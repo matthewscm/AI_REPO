@@ -11,7 +11,7 @@ public:
         // Publisher for ROS2 camera topic
         pub_ = this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", 10);
 
-        // Open the default camera
+        // Open camera (0= laptop webcam)
         cap_.open(0);
         if (!cap_.isOpened()) {
             RCLCPP_ERROR(this->get_logger(), "Cannot open camera!");
@@ -20,7 +20,7 @@ public:
 
         // Timer for publishing frames
         timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(33),  // ~30 FPS
+            std::chrono::milliseconds(16),  // ~60 FPS
             std::bind(&CameraNode::timer_callback, this)
         );
     }
