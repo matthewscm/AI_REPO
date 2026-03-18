@@ -25,22 +25,26 @@ public:
             }
         );
 
+        image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+        "camera/camera/color/image_raw", 10,
+        std::bind(&CameraNode::image_callback, this, std::placeholders::_1)
+        );
         // Open camera (0= laptop webcam)
-        cap_.open(0);
-        if (!cap_.isOpened()) {
-            RCLCPP_ERROR(this->get_logger(), "Cannot open camera!");
-            rclcpp::shutdown();
-        }
+        //cap_.open(0);
+        // if (!cap_.isOpened()) {
+            // RCLCPP_ERROR(this->get_logger(), "Cannot open camera!");
+            // rclcpp::shutdown();
+        // }
 
         // Create OpenCV window
         cv::namedWindow("Live Camera Feed", cv::WINDOW_NORMAL);
         // Size the window smaller (640*0.9 = 576, 480*0.9 = 432)
         cv::resizeWindow("Live Camera Feed", 576, 432);
         // Timer for publishing frames
-        timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(16),  // ~60 FPS
-            std::bind(&CameraNode::timer_callback, this)
-        );
+        // timer_ = this->create_wall_timer(
+        //     std::chrono::milliseconds(16),  // ~60 FPS
+        //     std::bind(&CameraNode::timer_callback, this)
+        // );
     }
 
 private:
@@ -71,37 +75,74 @@ private:
     }
 
     // Timer callback to capture, display, and publish frames
-    void timer_callback()
+    // void timer_callback()
+    // {
+    //     cv::Mat frame;
+    //     if (!cap_.read(frame)) {
+    //         RCLCPP_WARN(this->get_logger(), "Failed to read frame from camera");
+    //         return;
+    //     }
+
+    //     // Default bottom-right green text
+    //     display_text(frame, "Live Feed");
+
+    //     // If bottle detected, show top-left red text
+    //     if (bottle_detected_) {
+    //         // Top-left, larger red text
+    //         display_text(frame, "Bottle Detected", cv::Point(10, 30), 1.5, cv::Scalar(0, 0, 255));
+    //     }
+    //     // --- Show live feed in OpenCV window ---
+    //     cv::imshow("Live Camera Feed", frame);
+    //     cv::waitKey(1);
+
+    //     // --- Publish to ROS2 topic ---
+    //     auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();
+    //     pub_->publish(*msg);
+    // }
+
+    //Image Callback 
+
+    void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
     {
         cv::Mat frame;
-        if (!cap_.read(frame)) {
-            RCLCPP_WARN(this->get_logger(), "Failed to read frame from camera");
+
+        try {
+            frame = cv_bridge::toCvCopy(msg, "bgr8")->image;
+        } catch (cv_bridge::Exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "cv_bridge error: %s", e.what());
             return;
         }
 
-        // Default bottom-right green text
         display_text(frame, "Live Feed");
 
-        // If bottle detected, show top-left red text
         if (bottle_detected_) {
-            // Top-left, larger red text
             display_text(frame, "Bottle Detected", cv::Point(10, 30), 1.5, cv::Scalar(0, 0, 255));
         }
-        // --- Show live feed in OpenCV window ---
+
+        // --- Show live feed ---
         cv::imshow("Live Camera Feed", frame);
-        cv::waitKey(1);
+        int key = cv::waitKey(1);
+        if (key == 27) {  // ESC to quit
+            rclcpp::shutdown();
+        }
 
         // --- Publish to ROS2 topic ---
-        auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();
-        pub_->publish(*msg);
+        auto out_msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();
+        pub_->publish(*out_msg);
+
+        RCLCPP_INFO(this->get_logger(), "Receiving image");
     }
 
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr bottle_sub_;
-    cv::VideoCapture cap_;
-    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
+    // For laptop Camera 
+    //cv::VideoCapture cap_;
+    //rclcpp::TimerBase::SharedPtr timer_;
     bool bottle_detected_ = false;
 };
+
+
 
 // Main function
 int main(int argc, char **argv)
