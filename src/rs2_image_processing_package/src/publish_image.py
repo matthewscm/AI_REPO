@@ -13,7 +13,7 @@ class StaticImagePublisher(Node):
         self.bridge = CvBridge()
         
         # Load the image
-        self.img_path = 'blue_bottle.jpeg'
+        self.img_path = 'RGB_caps.jpeg'
         if not os.path.exists(self.img_path):
             self.get_logger().error(f"Image not found at {self.img_path}")
             raise FileNotFoundError(f"Missing {self.img_path}")
