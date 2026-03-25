@@ -195,7 +195,7 @@ private:
 
             // Log output to terminal ONLY every 250 ms (0.25 seconds)
             RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 250, 
-                        "Detected: [%s] | ID: %d | Center: (%d, %d, %.2fm) | (R Area:%.0f, G Area:%.0f, B Area:%.0f)", 
+                        "Detected: [%s] | ID: %d | Center: (%d, %d, %.4fm) | (R Area:%.0f, G Area:%.0f, B Area:%.0f)", 
                         category.c_str(), class_id, center_x, center_y, depth_z, red_info.first, green_info.first, blue_info.first);
 
         }

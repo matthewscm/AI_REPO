@@ -100,22 +100,32 @@ private:
 
         display_text(frame, "Live Feed");
 
+        // Choose color and label
         if (bottle_class_id_ == 0) {
-            display_text(frame, "Red", cv::Point(10, 30), 1.5, cv::Scalar(0, 0, 255));
-        }
+            label_text = "Red";
+            circle_color = cv::Scalar(0, 0, 255);  // BGR
+        } 
         else if (bottle_class_id_ == 1) {
-            display_text(frame, "Green", cv::Point(10, 30), 1.5, cv::Scalar(0, 255, 0));
+            label_text = "Green";
+            circle_color = cv::Scalar(0, 255, 0);
         } 
         else if (bottle_class_id_ == 2) {
-            display_text(frame, "Blue", cv::Point(10, 30), 1.5, cv::Scalar(255, 0, 0));
-        }
+            label_text = "Blue";
+            circle_color = cv::Scalar(255, 0, 0);
+        } 
         else {
-            display_text(frame, "No Bottle Detected/Unknown Bottle Type", cv::Point(10, 30), 1.5, cv::Scalar(0, 255, 255));
+            label_text = "Processing";
+            circle_color = cv::Scalar(0, 255, 255);  // Cyan for unknown
         }
+
+        // Display text
+        display_text(frame, label_text, cv::Point(10, 30), 1.5, circle_color);
 
         // Draw center point if valid
         if (bottle_class_id_ != -1) {
-            cv::circle(frame, cv::Point(center_.x, center_.y), 5, cv::Scalar(0, 0, 255), 1);
+            int radius = 10;       // Slightly bigger circle
+            int thickness = 2;     // Slightly visible (positive thickness)
+            cv::circle(frame, cv::Point(center_.x, center_.y), radius, circle_color, thickness);
         }
 
         // --- Show live feed ---
@@ -129,7 +139,7 @@ private:
         auto out_msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();
         pub_->publish(*out_msg);
 
-        RCLCPP_INFO(this->get_logger(), "Receiving image");
+        //RCLCPP_INFO(this->get_logger(), "Receiving image");
     }
 
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_;
@@ -143,6 +153,8 @@ private:
     //bool bottle_detected_ = false;
     int bottle_class_id_ = -1;
     geometry_msgs::msg::Point center_;
+    std::string label_text = "No Bottle Detected/Unknown Bottle Type";
+    cv::Scalar circle_color = cv::Scalar(0, 255, 255);
 };
 
 
