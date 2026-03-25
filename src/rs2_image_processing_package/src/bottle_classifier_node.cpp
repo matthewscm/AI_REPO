@@ -9,6 +9,10 @@
 #include <vector>
 #include <utility>
 #include <mutex>
+#include <iomanip>
+#include <sstream>
+#include <chrono>
+#include <thread>
 
 class BottleClassifierNode : public rclcpp::Node
 {
@@ -24,29 +28,68 @@ public:
         class_id_pub_ = this->create_publisher<std_msgs::msg::Int32>("bottle_class_id", 10);
         image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("processed_image", 10);
         center_pub_ = this->create_publisher<geometry_msgs::msg::Point>("bottle_center", 10);
+        avg_center_pub_ = this->create_publisher<geometry_msgs::msg::Point>("bottle_center_average", 10);
 
         // 3. Initialize subscriptions for Depth and RGB topics
         depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            "/camera/camera/depth/image_rect_raw", qos,
+            "/camera/aligned_depth_to_color/image_raw", qos,
             std::bind(&BottleClassifierNode::depth_callback, this, std::placeholders::_1));
 
         rgb_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            "/camera/camera/color/image_raw", qos,
+            "/camera/color/image_raw", qos,
             std::bind(&BottleClassifierNode::image_callback, this, std::placeholders::_1));
 
-        RCLCPP_INFO(this->get_logger(), "RGB-D Multi-Categorizer Node started. Waiting for images...");
+        // 4. Set a timer to shut down the node after 5 seconds and publish averages
+        shutdown_timer_ = this->create_wall_timer(
+            std::chrono::seconds(6),
+            [this]() {
+                if (detection_count_ > 0) {
+                    double avg_x = sum_x_ / detection_count_;
+                    double avg_y = sum_y_ / detection_count_;
+                    double avg_z = sum_z_ / detection_count_;
+                    
+                    RCLCPP_INFO(this->get_logger(), "=========================================");
+                    RCLCPP_INFO(this->get_logger(), "FINAL AVERAGE CENTER: (%.2f, %.2f, %.3fm)", avg_x, avg_y, avg_z);
+                    RCLCPP_INFO(this->get_logger(), "Total Valid Detections: %d", detection_count_);
+                    RCLCPP_INFO(this->get_logger(), "=========================================");
+
+                    geometry_msgs::msg::Point avg_msg;
+                    avg_msg.x = avg_x;
+                    avg_msg.y = avg_y;
+                    avg_msg.z = avg_z;
+                    avg_center_pub_->publish(avg_msg);
+                    
+                    // Small delay to ensure the final message is sent before the node exits
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                } else {
+                    RCLCPP_INFO(this->get_logger(), "No bottles detected during the 5 seconds. No average to publish.");
+                }
+
+                RCLCPP_INFO(this->get_logger(), "5 seconds have elapsed. Auto-shutting down node.");
+                rclcpp::shutdown();
+            });
+
+        RCLCPP_INFO(this->get_logger(), "RGB-D Multi-Categorizer Node started. Will automatically shut down in 5 seconds...");
     }
 
 private:
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr rgb_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
+    rclcpp::TimerBase::SharedPtr shutdown_timer_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr category_pub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr class_id_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr center_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr avg_center_pub_;
 
     cv::Mat latest_depth_img_;
     std::mutex depth_mutex_;
+
+    // Variables to accumulate values for the final average
+    double sum_x_ = 0.0;
+    double sum_y_ = 0.0;
+    double sum_z_ = 0.0;
+    int detection_count_ = 0;
 
     // Callback to store the latest aligned depth image
     void depth_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
@@ -165,8 +208,11 @@ private:
                 cv::rectangle(display_img, best_bbox, box_color, 2);
                 cv::circle(display_img, cv::Point(center_x, center_y), 5, box_color, -1); // Solid circle at center
                 
-                // Add depth text to visualization
-                std::string label = category + " (" + std::to_string(depth_z).substr(0, 4) + "m)";
+                // Add depth text to visualization with 3 decimal precision (mm level)
+                std::stringstream depth_ss;
+                depth_ss << std::fixed << std::setprecision(3) << depth_z;
+                std::string label = category + " (" + depth_ss.str() + "m)";
+                
                 cv::putText(display_img, label, cv::Point(best_bbox.x, std::max(best_bbox.y - 10, 0)), 
                             cv::FONT_HERSHEY_SIMPLEX, 0.9, box_color, 2);
 
@@ -176,6 +222,12 @@ private:
                 center_msg.y = center_y;
                 center_msg.z = depth_z;
                 center_pub_->publish(center_msg);
+
+                // Accumulate data for the final average
+                sum_x_ += center_x;
+                sum_y_ += center_y;
+                sum_z_ += depth_z;
+                detection_count_++;
             }
 
             // Publish the string category
@@ -195,7 +247,7 @@ private:
 
             // Log output to terminal ONLY every 250 ms (0.25 seconds)
             RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 250, 
-                        "Detected: [%s] | ID: %d | Center: (%d, %d, %.2fm) | (R Area:%.0f, G Area:%.0f, B Area:%.0f)", 
+                        "Detected: [%s] | ID: %d | Center: (%d, %d, %.3fm) | (R Area:%.0f, G Area:%.0f, B Area:%.0f)", 
                         category.c_str(), class_id, center_x, center_y, depth_z, red_info.first, green_info.first, blue_info.first);
 
         }
