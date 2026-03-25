@@ -18,27 +18,28 @@
 
 class BottleGridSpawner : public rclcpp::Node {
 public:
-    BottleGridSpawner() : Node("bottle_grid_spawner") 
+    BottleGridSpawner() : Node("bottle_grid_spawner")
     {
-        // Bottle STL resource paths
-        bottle_meshes_ = {
-            {"green", "package://simulation_cpp/meshes/bottle_green.stl"},
-            {"red",   "package://simulation_cpp/meshes/bottle_red.stl"},
-            {"blue",  "package://simulation_cpp/meshes/bottle_blue.stl"}
-        };
+        // --- Single STL file for all bottles ---
+        mesh_path_ = "package://simulation_cpp/meshes/bottle.stl";
 
-        // RGBA Colours
+        // --- Bottle types (keys only) ---
+        bottle_types_ = {"green", "red", "blue", "orange", "black"};
+
+        // --- Colours for each bottle type ---
         color_map_ = {
-            {"green", makeColor(0.1f, 0.8f, 0.1f)},
-            {"red",   makeColor(0.8f, 0.1f, 0.1f)},
-            {"blue",  makeColor(0.1f, 0.2f, 0.9f)}
+            {"green",  makeColor(0.1f, 0.8f, 0.1f)},
+            {"red",    makeColor(0.8f, 0.1f, 0.1f)},
+            {"blue",   makeColor(0.1f, 0.2f, 0.9f)},
+            {"orange", makeColor(1.0f, 0.5f, 0.0f)},
+            {"black",  makeColor(0.05f, 0.05f, 0.05f)}
         };
 
-        // Publisher for PlanningScene diffs (Humble-compatible colouring)
+        // Publisher for PlanningScene colour diffs
         planning_scene_pub_ =
             this->create_publisher<moveit_msgs::msg::PlanningScene>("planning_scene", 10);
 
-        // Trigger spawning after a short delay
+        // Timer to trigger once
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(500),
             std::bind(&BottleGridSpawner::spawn_grid, this));
@@ -46,7 +47,6 @@ public:
 
 private:
 
-    // Helper to construct RGBA colour
     std_msgs::msg::ColorRGBA makeColor(float r, float g, float b, float a = 1.0f)
     {
         std_msgs::msg::ColorRGBA c;
@@ -59,7 +59,7 @@ private:
 
     void spawn_grid()
     {
-        timer_->cancel(); // Only spawn once
+        timer_->cancel();
 
         int rows = 4, cols = 4;
         double spacing = 0.08;
@@ -68,46 +68,43 @@ private:
         std::vector<moveit_msgs::msg::CollisionObject> collision_objects;
         std::vector<moveit_msgs::msg::ObjectColor> object_colors;
 
-        // Collect bottle types
-        std::vector<std::string> types;
-        for (auto const& [name, _] : bottle_meshes_)
-            types.push_back(name);
-
         // Random selection engine
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dis(0, types.size() - 1);
+        std::uniform_int_distribution<> dis(0, bottle_types_.size() - 1);
 
-        // ----- GRID LOOP -----
+        // --- Build a 4x4 grid of bottles ---
         for (int r = 0; r < rows; ++r) {
             for (int c = 0; c < cols; ++c)
             {
-                std::string bottle_type = types[dis(gen)];
-                std::string mesh_path = bottle_meshes_[bottle_type];
+                // Pick a bottle type (colour)
+                std::string bottle_type = bottle_types_[dis(gen)];
 
                 moveit_msgs::msg::CollisionObject obj;
                 obj.header.frame_id = "base_link";
                 obj.id = "bottle_" + std::to_string(r) + "_" +
                          std::to_string(c) + "_" + bottle_type;
 
-                // Load mesh
-                shapes::Mesh* m = shapes::createMeshFromResource(mesh_path);
+                // Load mesh ONCE for all bottles
+                shapes::Mesh* m = shapes::createMeshFromResource(mesh_path_);
                 if (!m) {
-                    RCLCPP_ERROR(this->get_logger(), "Could not load mesh: %s", mesh_path.c_str());
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "Could not load mesh: %s",
+                                 mesh_path_.c_str());
                     continue;
                 }
 
                 // Convert mesh → ROS message
                 shapes::ShapeMsg shape_msg;
                 shape_msgs::msg::Mesh mesh_msg;
+
                 constructMsgFromShape(m, shape_msg);
                 mesh_msg = boost::get<shape_msgs::msg::Mesh>(shape_msg);
-
-                delete m; // cleanup
+                delete m;
 
                 // Scale mesh
                 double scale = 0.0123;
-                for (auto &v : mesh_msg.vertices) {
+                for (auto& v : mesh_msg.vertices) {
                     v.x *= scale;
                     v.y *= scale;
                     v.z *= scale;
@@ -116,8 +113,8 @@ private:
                 // Pose
                 geometry_msgs::msg::Pose pose;
                 pose.orientation.w = 1.0;
-                pose.position.x = origin_x + (r * spacing);
-                pose.position.y = origin_y + (c * spacing);
+                pose.position.x = origin_x + r * spacing;
+                pose.position.y = origin_y + c * spacing;
                 pose.position.z = 0.0;
 
                 obj.meshes.push_back(mesh_msg);
@@ -126,7 +123,7 @@ private:
 
                 collision_objects.push_back(obj);
 
-                // Register object colour
+                // --- Assign colour ---
                 moveit_msgs::msg::ObjectColor col;
                 col.id = obj.id;
                 col.color = color_map_[bottle_type];
@@ -134,22 +131,25 @@ private:
             }
         }
 
-        // Apply collision objects
+        // Apply meshes
         planning_scene_interface_.applyCollisionObjects(collision_objects);
 
-        // ----- APPLY COLOURS (HUMBLE) -----
+        // Apply colours via PlanningScene diff
         moveit_msgs::msg::PlanningScene ps_msg;
         ps_msg.is_diff = true;
         ps_msg.object_colors = object_colors;
 
         planning_scene_pub_->publish(ps_msg);
 
-        RCLCPP_INFO(this->get_logger(), "Spawned coloured + scaled bottle grid.");
+        RCLCPP_INFO(this->get_logger(),
+            "Spawned 4x4 grid of coloured bottles using one STL file.");
     }
 
+    // ---- Members ----
     moveit::planning_interface::PlanningSceneInterface planning_scene_interface_;
 
-    std::map<std::string, std::string> bottle_meshes_;
+    std::string mesh_path_;
+    std::vector<std::string> bottle_types_;
     std::map<std::string, std_msgs::msg::ColorRGBA> color_map_;
 
     rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_pub_;
