@@ -26,7 +26,7 @@ public:
 
         // 3. Initialize a standard subscription to the RGB topic
         rgb_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            "/camera/color/image_raw", qos,
+            "camera/camera/color/image_raw", qos,
             std::bind(&BottleClassifierNode::image_callback, this, std::placeholders::_1));
 
         RCLCPP_INFO(this->get_logger(), "RGB Multi-Categorizer Node started. Waiting for images...");

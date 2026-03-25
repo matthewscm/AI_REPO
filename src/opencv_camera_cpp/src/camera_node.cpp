@@ -3,6 +3,8 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <std_msgs/msg/bool.hpp> 
+#include <std_msgs/msg/int32.hpp>
+#include <geometry_msgs/msg/point.hpp>
 
 class CameraNode : public rclcpp::Node
 {
@@ -14,15 +16,14 @@ public:
         // Publisher for ROS2 camera topic
         pub_ = this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", 10);
 
-        // Subscriber for bottle detection flag
-        bottle_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-            "bottle_detected", 10,
-            [this](const std_msgs::msg::Bool::SharedPtr msg) {
-                this->bottle_detected_ = msg->data;
-                if (msg->data) {
-                    RCLCPP_INFO(this->get_logger(), "Bottle detected!");
-                }
-            }
+        class_id_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+            "bottle_class_id", 10,
+            std::bind(&CameraNode::class_id_callback, this, std::placeholders::_1)
+        );
+
+        center_sub_ = this->create_subscription<geometry_msgs::msg::Point>(
+            "bottle_center", 10,
+            std::bind(&CameraNode::center_callback, this, std::placeholders::_1)
         );
 
         image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
@@ -48,6 +49,16 @@ public:
     }
 
 private:
+    // Callback for class ID updates
+    void class_id_callback(const std_msgs::msg::Int32::SharedPtr msg)
+    {        
+        bottle_class_id_ = msg->data;
+    }
+    // Callback for center point updates
+    void center_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+    {
+        center_ = *msg;
+    }
     // Design text for displaying on the video feed
     void display_text(cv::Mat &frame,
                     const std::string &text,
@@ -74,32 +85,6 @@ private:
         cv::putText(frame, text, text_org, font_face, font_scale, colour, thickness);
     }
 
-    // Timer callback to capture, display, and publish frames
-    // void timer_callback()
-    // {
-    //     cv::Mat frame;
-    //     if (!cap_.read(frame)) {
-    //         RCLCPP_WARN(this->get_logger(), "Failed to read frame from camera");
-    //         return;
-    //     }
-
-    //     // Default bottom-right green text
-    //     display_text(frame, "Live Feed");
-
-    //     // If bottle detected, show top-left red text
-    //     if (bottle_detected_) {
-    //         // Top-left, larger red text
-    //         display_text(frame, "Bottle Detected", cv::Point(10, 30), 1.5, cv::Scalar(0, 0, 255));
-    //     }
-    //     // --- Show live feed in OpenCV window ---
-    //     cv::imshow("Live Camera Feed", frame);
-    //     cv::waitKey(1);
-
-    //     // --- Publish to ROS2 topic ---
-    //     auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();
-    //     pub_->publish(*msg);
-    // }
-
     //Image Callback 
 
     void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
@@ -115,8 +100,22 @@ private:
 
         display_text(frame, "Live Feed");
 
-        if (bottle_detected_) {
-            display_text(frame, "Bottle Detected", cv::Point(10, 30), 1.5, cv::Scalar(0, 0, 255));
+        if (bottle_class_id_ == 0) {
+            display_text(frame, "Red", cv::Point(10, 30), 1.5, cv::Scalar(0, 0, 255));
+        }
+        else if (bottle_class_id_ == 1) {
+            display_text(frame, "Green", cv::Point(10, 30), 1.5, cv::Scalar(0, 255, 0));
+        } 
+        else if (bottle_class_id_ == 2) {
+            display_text(frame, "Blue", cv::Point(10, 30), 1.5, cv::Scalar(255, 0, 0));
+        }
+        else {
+            display_text(frame, "No Bottle Detected/Unknown Bottle Type", cv::Point(10, 30), 1.5, cv::Scalar(0, 255, 255));
+        }
+
+        // Draw center point if valid
+        if (bottle_class_id_ != -1) {
+            cv::circle(frame, cv::Point(center_.x, center_.y), 5, cv::Scalar(0, 0, 255), 1);
         }
 
         // --- Show live feed ---
@@ -134,12 +133,16 @@ private:
     }
 
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_;
-    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr bottle_sub_;
+    //rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr bottle_sub_; //not needed
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr class_id_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr center_sub_;
     // For laptop Camera 
     //cv::VideoCapture cap_;
     //rclcpp::TimerBase::SharedPtr timer_;
-    bool bottle_detected_ = false;
+    //bool bottle_detected_ = false;
+    int bottle_class_id_ = -1;
+    geometry_msgs::msg::Point center_;
 };
 
 
