@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <mutex>
 
 class BottleClassifierNode : public rclcpp::Node
 {
@@ -24,20 +25,41 @@ public:
         image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("processed_image", 10);
         center_pub_ = this->create_publisher<geometry_msgs::msg::Point>("bottle_center", 10);
 
-        // 3. Initialize a standard subscription to the RGB topic
+        // 3. Initialize subscriptions for Depth and RGB topics
+        depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+            "/camera/camera/depth/image_rect_raw", qos,
+            std::bind(&BottleClassifierNode::depth_callback, this, std::placeholders::_1));
+
         rgb_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            "/camera/color/image_raw", qos,
+            "/camera/camera/color/image_raw", qos,
             std::bind(&BottleClassifierNode::image_callback, this, std::placeholders::_1));
 
-        RCLCPP_INFO(this->get_logger(), "RGB Multi-Categorizer Node started. Waiting for images...");
+        RCLCPP_INFO(this->get_logger(), "RGB-D Multi-Categorizer Node started. Waiting for images...");
     }
 
 private:
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr rgb_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr category_pub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr class_id_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr center_pub_;
+
+    cv::Mat latest_depth_img_;
+    std::mutex depth_mutex_;
+
+    // Callback to store the latest aligned depth image
+    void depth_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
+    {
+        try {
+            // RealSense depth is typically 16-bit unsigned int representing millimeters
+            cv::Mat depth_img = cv_bridge::toCvShare(msg, "16UC1")->image;
+            std::lock_guard<std::mutex> lock(depth_mutex_);
+            latest_depth_img_ = depth_img.clone(); // Keep safely in memory
+        } catch (cv_bridge::Exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Depth cv_bridge exception: %s", e.what());
+        }
+    }
 
     // Main callback executed whenever an RGB image arrives
     void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
@@ -95,8 +117,8 @@ private:
             cv::Rect best_bbox;
             cv::Scalar box_color;
 
-            // Threshold: must see a contiguous blob of at least 150 pixels
-            double min_area_threshold = 200.0; 
+            // Threshold: must see a contiguous blob of at least 1500 pixels
+            double min_area_threshold = 1500.0; 
 
             // Hierarchical check: Red [0] -> Green [1] -> Blue [2]
             if (red_info.first > min_area_threshold) {
@@ -120,23 +142,39 @@ private:
             cv::Mat display_img = color_img.clone();
             int center_x = -1;
             int center_y = -1;
+            float depth_z = 0.0;
             
             if (class_id != -1) {
                 // Calculate center point
                 center_x = best_bbox.x + best_bbox.width / 2;
                 center_y = best_bbox.y + best_bbox.height / 2;
 
+                // Extract Depth at the center coordinate
+                {
+                    std::lock_guard<std::mutex> lock(depth_mutex_);
+                    if (!latest_depth_img_.empty() && 
+                        center_x >= 0 && center_x < latest_depth_img_.cols && 
+                        center_y >= 0 && center_y < latest_depth_img_.rows) {
+                        
+                        uint16_t depth_mm = latest_depth_img_.at<uint16_t>(center_y, center_x);
+                        depth_z = static_cast<float>(depth_mm) / 1000.0f; // Convert mm to meters
+                    }
+                }
+
                 // Draw the rectangle, center dot, and category text on the cloned image
                 cv::rectangle(display_img, best_bbox, box_color, 2);
                 cv::circle(display_img, cv::Point(center_x, center_y), 5, box_color, -1); // Solid circle at center
-                cv::putText(display_img, category, cv::Point(best_bbox.x, std::max(best_bbox.y - 10, 0)), 
+                
+                // Add depth text to visualization
+                std::string label = category + " (" + std::to_string(depth_z).substr(0, 4) + "m)";
+                cv::putText(display_img, label, cv::Point(best_bbox.x, std::max(best_bbox.y - 10, 0)), 
                             cv::FONT_HERSHEY_SIMPLEX, 0.9, box_color, 2);
 
-                // Publish the 2D center point
+                // Publish the 3D center point
                 geometry_msgs::msg::Point center_msg;
                 center_msg.x = center_x;
                 center_msg.y = center_y;
-                center_msg.z = 0.0;
+                center_msg.z = depth_z;
                 center_pub_->publish(center_msg);
             }
 
@@ -157,8 +195,8 @@ private:
 
             // Log output to terminal ONLY every 250 ms (0.25 seconds)
             RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 250, 
-                        "Detected: [%s] | ID: %d | Center: (%d, %d) | (Red Area:%.0f, Green Area:%.0f, Blue Area:%.0f)", 
-                        category.c_str(), class_id, center_x, center_y, red_info.first, green_info.first, blue_info.first);
+                        "Detected: [%s] | ID: %d | Center: (%d, %d, %.2fm) | (R Area:%.0f, G Area:%.0f, B Area:%.0f)", 
+                        category.c_str(), class_id, center_x, center_y, depth_z, red_info.first, green_info.first, blue_info.first);
 
         }
         catch (cv_bridge::Exception& e)
