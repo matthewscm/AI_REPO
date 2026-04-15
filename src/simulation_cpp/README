@@ -5,6 +5,7 @@ cd ~/ros2_ws
 
 # Build only the simulation package
 colcon build --packages-select simulation_cpp
+colcon build --symlink-install
 
 # Source the workspace
 source install/setup.bash
