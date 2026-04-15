@@ -1,0 +1,29 @@
+# Running Code:
+
+# Navigate to workspace root
+cd ~/ros2_ws
+
+# Build only the simulation package
+colcon build --packages-select simulation_cpp
+
+# Source the workspace
+source install/setup.bash
+
+# Run the bottle spawner node
+ros2 run simulation_cpp bottle_spawner_node
+
+# In a new terminal launch the MoveIt configuration for the UR3 robot
+ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur3 launch_rviz:=true
+
+
+# In another terminal, launch the virtual camera node
+ros2 launch simulation_cpp virtual_camera.launch.py
+
+ros2 launch simulation_cpp simulation.launch.py
+
+
+ros2 launch simulation_cpp simulation2.launch.py
+
+ros2 launch simulation_cpp simulation_moveIt_UR3wGripper.launch.py
+
+ros2 launch ur_onrobot_moveit_config ur_onrobot_moveit.launch.py ur_type:=ur3e onrobot_type:=rg2
