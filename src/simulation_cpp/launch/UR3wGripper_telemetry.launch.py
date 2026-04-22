@@ -14,7 +14,7 @@ def generate_launch_description():
     ur_driver_pkg = get_package_share_directory('ur_robot_driver')
 
     # Common Arguments
-    robot_ip = '192.168.0.197'
+    robot_ip = '192.168.0.191'
     ur_type = 'ur3e'  # Standardized to ur3e
 
     # -----------------------------------------------------
