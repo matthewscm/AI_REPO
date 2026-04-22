@@ -1,5 +1,68 @@
 # Running Code:
 
+
+# Navigate to workspace root
+cd ~/ros2_ws
+
+# Build
+colcon build --symlink-install
+
+# Source the workspace
+source install/setup.bash
+
+# Launch Workspace: UR3e w/Gripper
+ros2 launch simulation_cpp simulation_moveIt_UR3wGripper.launch.py
+
+# Load Scene Into Environment
+...
+
+# Run the bottle spawner node
+ros2 run simulation_cpp bottle_spawner_node
+
+
+
+
+
+
+
+
+
+# In a new terminal launch the MoveIt configuration for the UR3 robot
+ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur3 launch_rviz:=true
+
+
+# In another terminal, launch the virtual camera node
+ros2 launch simulation_cpp virtual_camera.launch.py
+
+ros2 launch simulation_cpp simulation.launch.py
+
+
+ros2 launch simulation_cpp simulation2.launch.py
+
+ros2 launch simulation_cpp simulation_moveIt_UR3wGripper.launch.py
+
+ros2 launch ur_onrobot_moveit_config ur_onrobot_moveit.launch.py ur_type:=ur3e onrobot_type:=rg2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Navigate to workspace root
 cd ~/ros2_ws
 
@@ -28,3 +91,18 @@ ros2 launch simulation_cpp simulation2.launch.py
 ros2 launch simulation_cpp simulation_moveIt_UR3wGripper.launch.py
 
 ros2 launch ur_onrobot_moveit_config ur_onrobot_moveit.launch.py ur_type:=ur3e onrobot_type:=rg2
+
+
+
+    # --- ADDED IMAGE DISPLAY BELOW ---
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Name: Image
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /camera/image_raw  # Change this to your actual camera topic
+      Value: true
+    # --- END OF ADDED SECTION ---
