@@ -13,6 +13,9 @@ source install/setup.bash
 # Launch Workspace: UR3e w/Gripper
 ros2 launch simulation_cpp simulation_moveIt_UR3wGripper.launch.py
 
+# Launch Workspace: UR3e w/Gripper Telemetry
+ros2 launch simulation_cpp UR3wGripper_telemetry.launch.py
+
 # Load Scene Into Environment
 ...
 
