@@ -121,7 +121,7 @@ private:
     // ---------------- PROCESSES ----------------
     QProcess *camera_process_ = nullptr;
     QProcess *realsense_process_ = nullptr;
-    QProcess *classifier_process_ = nullptr;
+    //QProcess *classifier_process_ = nullptr;
 
     // ---------------- UI ----------------
     QLabel *image_label_;
@@ -145,11 +145,11 @@ private:
 
         if (camera_process_) delete camera_process_;
         if (realsense_process_) delete realsense_process_;
-        if (classifier_process_) delete classifier_process_;
+        //if (classifier_process_) delete classifier_process_;
 
         camera_process_ = new QProcess(this);
         realsense_process_ = new QProcess(this);
-        classifier_process_ = new QProcess(this);
+        //classifier_process_ = new QProcess(this);
 
         camera_process_->start("/bin/bash", QStringList()
             << "-c"
@@ -161,10 +161,10 @@ private:
             << "source /opt/ros/humble/setup.bash && "
                "ros2 launch realsense2_camera rs_launch.py");
 
-        classifier_process_->start("/bin/bash", QStringList()
-            << "-c"
-            << "source /opt/ros/humble/setup.bash && "
-               "ros2 run rs2_image_processing_package bottle_classifier_node");
+        // classifier_process_->start("/bin/bash", QStringList()
+        //     << "-c"
+        //     << "source /opt/ros/humble/setup.bash && "
+        //        "ros2 run rs2_image_processing_package bottle_classifier_node");
 
         RCLCPP_INFO(this->get_logger(),
                     "Camera + Realsense + Classifier started");
@@ -191,12 +191,12 @@ private:
 
         stop_process(camera_process_);
         stop_process(realsense_process_);
-        stop_process(classifier_process_);
+        //stop_process(classifier_process_);
 
         system("pkill -f camera_node");
         system("pkill -f realsense2_camera");
         system("pkill -f rs_launch");
-        system("pkill -f bottle_classifier_node");
+        //system("pkill -f bottle_classifier_node");
 
         this->close();
     }

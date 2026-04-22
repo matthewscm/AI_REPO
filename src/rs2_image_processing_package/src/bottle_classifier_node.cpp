@@ -32,16 +32,16 @@ public:
 
         // 3. Initialize subscriptions for Depth and RGB topics
         depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            "/camera/aligned_depth_to_color/image_raw", qos,
+            "camera/camera/aligned_depth_to_color/image_raw", qos,
             std::bind(&BottleClassifierNode::depth_callback, this, std::placeholders::_1));
 
         rgb_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            "/camera/color/image_raw", qos,
+            "camera/camera/color/image_raw", qos,
             std::bind(&BottleClassifierNode::image_callback, this, std::placeholders::_1));
 
         // 4. Set a timer to shut down the node after 5 seconds and publish averages
         shutdown_timer_ = this->create_wall_timer(
-            std::chrono::seconds(6),
+            std::chrono::seconds(20),
             [this]() {
                 if (detection_count_ > 0) {
                     double avg_x = sum_x_ / detection_count_;
