@@ -13,13 +13,6 @@ def generate_launch_description():
     simulation_pkg = get_package_share_directory('simulation_cpp')
     ur_onrobot_pkg = get_package_share_directory('ur_onrobot_moveit_config')
 
-    # Path to your custom RViz config
-    custom_rviz_config = os.path.join(
-        simulation_pkg,
-        'config',
-        'rviz_with_camera.rviz'
-    )
-
     # -----------------------------------------------------
     # Launch MoveIt with OnRobot Gripper + custom RViz config
     # -----------------------------------------------------
@@ -28,10 +21,9 @@ def generate_launch_description():
             os.path.join(ur_onrobot_pkg, 'launch', 'ur_onrobot_moveit.launch.py')
         ),
         launch_arguments={
-            'ur_type': 'ur3',
+            'ur_type': 'ur3e',
             'onrobot_type': 'rg2',        # <--- Add OnRobot RG2 gripper
             'launch_rviz': 'true',
-            'rviz_config': custom_rviz_config
         }.items()
     )
 
