@@ -66,8 +66,15 @@ install(TARGETS
 install(DIRECTORY resources/
   DESTINATION share/${PROJECT_NAME}/resources
 )
-  
-# Testing / linting (optional)
+
+# Install launch files
+install(
+  DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}
+)
+
+
+# Testing / linting 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
