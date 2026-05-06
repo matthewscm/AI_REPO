@@ -104,6 +104,7 @@ private:
     void stop_clicked()   { state_ = 2; publish(2); update_buttons(); }
     void resume_clicked() { state_ = 3; publish(3); update_buttons(); }
     void home_clicked()   { state_ = 0; publish(0); update_buttons(); }
+    void exit_clicked()   { exit_all(); }
 
     // ---------------- UI STATE ----------------
     void update_buttons()
