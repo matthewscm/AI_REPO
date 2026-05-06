@@ -30,8 +30,8 @@ public:
             std::bind(&CameraNode::image_callback, this, std::placeholders::_1)
         );
 
-        cv::namedWindow("Live Camera Feed", cv::WINDOW_NORMAL);
-        cv::resizeWindow("Live Camera Feed", 576, 432);
+       // cv::namedWindow("Live Camera Feed", cv::WINDOW_NORMAL);
+        //cv::resizeWindow("Live Camera Feed", 576, 432);
     }
 
     // Destructor to ensure clean shutdown
@@ -122,15 +122,15 @@ private:
                        2);
         }
 
-        cv::imshow("Live Camera Feed", frame);
+        // cv::imshow("Live Camera Feed", frame);
 
-        int key = cv::waitKey(1);
-        if (key == 27)
-        {
-            RCLCPP_INFO(this->get_logger(), "ESC pressed - shutting down");
-            shutdown_node();
-            return;
-        }
+        // int key = cv::waitKey(1);
+        // if (key == 27)
+        // {
+        //     RCLCPP_INFO(this->get_logger(), "ESC pressed - shutting down");
+        //     shutdown_node();
+        //     return;
+        // }
 
         auto out_msg =
             cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();

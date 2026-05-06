@@ -102,7 +102,7 @@ private:
     // ---------------- BUTTON LOGIC ----------------
     void start_clicked()  { state_ = 1; publish(1); update_buttons(); }
     void stop_clicked()   { state_ = 2; publish(2); update_buttons(); }
-    void resume_clicked() { state_ = 1; publish(3); update_buttons(); }
+    void resume_clicked() { state_ = 3; publish(3); update_buttons(); }
     void home_clicked()   { state_ = 0; publish(0); update_buttons(); }
 
     // ---------------- UI STATE ----------------
@@ -111,8 +111,8 @@ private:
         start_btn_->setVisible(state_ == 0);
 
         stop_btn_->setVisible(state_ == 1);
-        resume_btn_->setVisible(state_ == 2);
-        home_btn_->setVisible(state_ == 2);
+        resume_btn_->setVisible(state_ == 3);
+        home_btn_->setVisible(state_ == 0);
 
         exit_btn_->setVisible(true);
     }
