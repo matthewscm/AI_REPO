@@ -23,7 +23,7 @@ ros2 launch simulation_cpp UR3wGripper_telemetry.launch.py
 ros2 run simulation_cpp bottle_spawner_node
 
 
-
+ros2 run simulation_cpp static_environment_node
 
 
 

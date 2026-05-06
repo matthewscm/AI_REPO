@@ -30,14 +30,14 @@ def generate_launch_description():
     # -----------------------------------------------------
     # Optional: custom nodes (example)
     # -----------------------------------------------------
-    # bottle_spawner_node = Node(
-    #     package='simulation_cpp',
-    #     executable='bottle_spawner_node',
-    #     name='bottle_grid_spawner',
-    #     output='screen'
-    # )
+    static_environment_node = Node(
+        package='simulation_cpp',
+        executable= 'static_environment_node',
+        name='static_environment_node',
+        output='screen'
+    )
 
     return LaunchDescription([
         ur_onrobot_launch,
-        # bottle_spawner_node,
+        static_environment_node,
     ])

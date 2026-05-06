@@ -54,7 +54,18 @@ def generate_launch_description():
     )
     
 
+    # -----------------------------------------------------
+    # Optional: custom nodes (example)
+    # -----------------------------------------------------
+    static_environment_node = Node(
+        package='simulation_cpp',
+        executable= 'static_environment_node',
+        name='static_environment_node',
+        output='screen'
+    )
+
     return LaunchDescription([
         ur_driver_launch,
         ur_onrobot_launch,
+        static_environment_node,
     ])
