@@ -13,6 +13,7 @@ def generate_launch_description():
     # Paths
     # -----------------------------------------------------
     ur_onrobot_pkg = get_package_share_directory('ur_onrobot_moveit_config')
+    ur_driver_pkg = get_package_share_directory('ur_robot_driver')
 
     realsense_launch = os.path.join(
         get_package_share_directory('realsense2_camera'),
@@ -21,28 +22,60 @@ def generate_launch_description():
     )
 
     # -----------------------------------------------------
-    # MoveIt + UR + OnRobot Gripper
+    # Common Settings
+    # -----------------------------------------------------
+    robot_ip = '192.168.0.192'
+    ur_type = 'ur3e'
+
+    # -----------------------------------------------------
+    # 1. UR Driver (REAL ROBOT)
+    # -----------------------------------------------------
+    ur_driver_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(ur_driver_pkg, 'launch', 'ur_control.launch.py')
+        ),
+        launch_arguments={
+            'ur_type': ur_type,
+            'robot_ip': robot_ip,
+            'launch_rviz': 'false',
+            'initial_joint_controller': 'scaled_joint_trajectory_controller',
+            'activate_joint_controller': 'true',
+        }.items()
+    )
+
+    # -----------------------------------------------------
+    # 2. MoveIt + OnRobot Gripper
     # -----------------------------------------------------
     ur_onrobot_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(ur_onrobot_pkg, 'launch', 'ur_onrobot_moveit.launch.py')
         ),
         launch_arguments={
-            'ur_type': 'ur3e',
+            'ur_type': ur_type,
+            'robot_ip': robot_ip,
+            'use_sim_time': 'false',
+            'use_fake_hardware': 'false',
             'onrobot_type': 'rg2',
-            'launch_rviz': 'true', 
-            'robot_ip': '192.168.0.194',
+            'launch_rviz': 'true',
+            'description_file': 'ur_onrobot.urdf.xacro',
         }.items()
     )
 
+    # -----------------------------------------------------
+    # Launch Everything
+    # -----------------------------------------------------
     return LaunchDescription([
 
-        # -------- Robot stack first --------
-        ur_onrobot_launch,
-
-        # -------- Delay RealSense slightly --------
+        # -------- Robot FIRST --------
+        ur_driver_launch,
         TimerAction(
             period=2.0,
+            actions=[ur_onrobot_launch]
+        ),
+
+        # -------- RealSense --------
+        TimerAction(
+            period=4.0,
             actions=[
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(realsense_launch)
@@ -52,7 +85,7 @@ def generate_launch_description():
 
         # -------- Static Workspace --------
         TimerAction(
-            period=4.0,
+            period=6.0,
             actions=[
                 Node(
                     package='simulation_cpp',
@@ -65,7 +98,7 @@ def generate_launch_description():
 
         # -------- Camera Node --------
         TimerAction(
-            period=6.0,
+            period=8.0,
             actions=[
                 Node(
                     package='opencv_camera_cpp',
@@ -78,7 +111,7 @@ def generate_launch_description():
 
         # -------- Classifier --------
         TimerAction(
-            period=8.0,
+            period=10.0,
             actions=[
                 Node(
                     package='rs2_image_processing_package',
@@ -91,7 +124,7 @@ def generate_launch_description():
 
         # -------- GUI --------
         TimerAction(
-            period=10.0,
+            period=12.0,
             actions=[
                 Node(
                     package='opencv_camera_cpp',
