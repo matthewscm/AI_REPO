@@ -55,8 +55,8 @@ def generate_launch_description():
             actions=[
                 Node(
                     package='simulation_cpp',
-                    executable='static_workspace_node',
-                    name='static_workspace',
+                    executable='static_environment_node',
+                    name='static_environment_node',
                     output='screen'
                 ),
             ]
