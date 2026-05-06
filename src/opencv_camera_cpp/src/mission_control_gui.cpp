@@ -9,7 +9,6 @@
 
 #include <thread>
 
-
 class ControlGUI : public QWidget, public rclcpp::Node
 {
 public:
@@ -24,6 +23,7 @@ public:
         resume_btn_ = new QPushButton("Resume");
         home_btn_   = new QPushButton("Home");
         exit_btn_   = new QPushButton("Exit");
+        detect_btn_ = new QPushButton("Detect Bottle");
 
         QString btn_style =
             "QPushButton {"
@@ -38,6 +38,7 @@ public:
         resume_btn_->setStyleSheet(btn_style);
         home_btn_->setStyleSheet(btn_style);
         exit_btn_->setStyleSheet(btn_style);
+        detect_btn_->setStyleSheet(btn_style);
 
         // ---------------- LAYOUT ----------------
         QVBoxLayout *main_layout = new QVBoxLayout();
@@ -47,16 +48,17 @@ public:
         button_layout->addWidget(stop_btn_);
         button_layout->addWidget(resume_btn_);
         button_layout->addWidget(home_btn_);
+        button_layout->addWidget(detect_btn_); // NEW BUTTON
         button_layout->addWidget(exit_btn_);
 
-        main_layout->addStretch();          // centers buttons vertically
+        main_layout->addStretch();
         main_layout->addLayout(button_layout);
         main_layout->addStretch();
 
         setLayout(main_layout);
 
         setWindowTitle("Mission Control GUI");
-        resize(900, 300);  // smaller, clean control panel
+        resize(900, 300);
 
         // ---------------- SIGNALS ----------------
         connect(start_btn_,  &QPushButton::clicked, this, &ControlGUI::start_clicked);
@@ -64,6 +66,7 @@ public:
         connect(resume_btn_, &QPushButton::clicked, this, &ControlGUI::resume_clicked);
         connect(home_btn_,   &QPushButton::clicked, this, &ControlGUI::home_clicked);
         connect(exit_btn_,   &QPushButton::clicked, this, &ControlGUI::exit_all);
+        connect(detect_btn_, &QPushButton::clicked, this, &ControlGUI::detect_clicked);
 
         update_buttons();
     }
@@ -91,6 +94,7 @@ private:
     QPushButton *resume_btn_;
     QPushButton *home_btn_;
     QPushButton *exit_btn_;
+    QPushButton *detect_btn_;
 
     // ---------------- EXIT ----------------
     void exit_all()
@@ -104,7 +108,7 @@ private:
     void stop_clicked()   { state_ = 2; publish(2); update_buttons(); }
     void resume_clicked() { state_ = 3; publish(3); update_buttons(); }
     void home_clicked()   { state_ = 0; publish(0); update_buttons(); }
-    void exit_clicked()   { exit_all(); }
+    void detect_clicked() { publish(4); } // NEW FUNCTION
 
     // ---------------- UI STATE ----------------
     void update_buttons()
@@ -116,6 +120,7 @@ private:
         home_btn_->setVisible(state_ == 1);
 
         exit_btn_->setVisible(true);
+        detect_btn_->setVisible(true); // ALWAYS visible
     }
 };
 
