@@ -3,16 +3,13 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QLabel>
-#include <QPixmap>
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/int32.hpp>
 
-#include <ament_index_cpp/get_package_share_directory.hpp>
-
 #include <thread>
-    
+
+
 class ControlGUI : public QWidget, public rclcpp::Node
 {
 public:
@@ -22,43 +19,25 @@ public:
         publisher_ = this->create_publisher<std_msgs::msg::Int32>("system_command", 10);
 
         // ---------------- BUTTONS ----------------
-        start_btn_ = new QPushButton("Start");
-        stop_btn_ = new QPushButton("Stop");
+        start_btn_  = new QPushButton("Start");
+        stop_btn_   = new QPushButton("Stop");
         resume_btn_ = new QPushButton("Resume");
-        home_btn_ = new QPushButton("Home");
-        exit_btn_ = new QPushButton("Exit");
+        home_btn_   = new QPushButton("Home");
+        exit_btn_   = new QPushButton("Exit");
 
-        // ---------------- IMAGE AREA ----------------
-        image_label_ = new QLabel();
+        QString btn_style =
+            "QPushButton {"
+            "font-size: 22px;"
+            "padding: 15px 30px;"
+            "min-width: 160px;"
+            "min-height: 60px;"
+            "}";
 
-        QPixmap placeholder;
-
-        try
-        {
-            std::string path =
-                ament_index_cpp::get_package_share_directory("opencv_camera_cpp")
-                + "/resources/no_image.jpg";
-
-            placeholder = QPixmap(QString::fromStdString(path));
-        }
-        catch (...)
-        {
-            placeholder = QPixmap();
-        }
-
-        if (placeholder.isNull())
-        {
-            placeholder = QPixmap(800, 500);
-            placeholder.fill(Qt::black);
-        }
-
-        image_label_->setPixmap(
-            placeholder.scaled(800, 500,
-                               Qt::KeepAspectRatio,
-                               Qt::SmoothTransformation)
-        );
-
-        image_label_->setAlignment(Qt::AlignCenter);
+        start_btn_->setStyleSheet(btn_style);
+        stop_btn_->setStyleSheet(btn_style);
+        resume_btn_->setStyleSheet(btn_style);
+        home_btn_->setStyleSheet(btn_style);
+        exit_btn_->setStyleSheet(btn_style);
 
         // ---------------- LAYOUT ----------------
         QVBoxLayout *main_layout = new QVBoxLayout();
@@ -70,32 +49,27 @@ public:
         button_layout->addWidget(home_btn_);
         button_layout->addWidget(exit_btn_);
 
-        main_layout->addWidget(image_label_);
+        main_layout->addStretch();          // centers buttons vertically
         main_layout->addLayout(button_layout);
+        main_layout->addStretch();
 
         setLayout(main_layout);
+
         setWindowTitle("Mission Control GUI");
+        resize(900, 300);  // smaller, clean control panel
 
         // ---------------- SIGNALS ----------------
-        connect(start_btn_, &QPushButton::clicked,
-                this, &ControlGUI::start_clicked);
-
-        connect(stop_btn_, &QPushButton::clicked,
-                this, &ControlGUI::stop_clicked);
-
-        connect(resume_btn_, &QPushButton::clicked,
-                this, &ControlGUI::resume_clicked);
-
-        connect(home_btn_, &QPushButton::clicked,
-                this, &ControlGUI::home_clicked);
-
-        connect(exit_btn_, &QPushButton::clicked,
-                this, &ControlGUI::exit_all);
+        connect(start_btn_,  &QPushButton::clicked, this, &ControlGUI::start_clicked);
+        connect(stop_btn_,   &QPushButton::clicked, this, &ControlGUI::stop_clicked);
+        connect(resume_btn_, &QPushButton::clicked, this, &ControlGUI::resume_clicked);
+        connect(home_btn_,   &QPushButton::clicked, this, &ControlGUI::home_clicked);
+        connect(exit_btn_,   &QPushButton::clicked, this, &ControlGUI::exit_all);
 
         update_buttons();
     }
 
 private:
+
     // ---------------- ROS ----------------
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr publisher_;
 
@@ -112,8 +86,6 @@ private:
     int state_; // 0=Home, 1=Running, 2=Stopped
 
     // ---------------- UI ----------------
-    QLabel *image_label_;
-
     QPushButton *start_btn_;
     QPushButton *stop_btn_;
     QPushButton *resume_btn_;
@@ -123,17 +95,15 @@ private:
     // ---------------- EXIT ----------------
     void exit_all()
     {
-        RCLCPP_INFO(this->get_logger(), "Shutting down entire system...");
-
-        rclcpp::shutdown();     // kills ALL nodes in launch
-        QApplication::quit();   // closes GUI
+        rclcpp::shutdown();
+        QApplication::quit();
     }
 
     // ---------------- BUTTON LOGIC ----------------
-    void start_clicked()   { state_ = 1; publish(1); update_buttons(); }
-    void stop_clicked()    { state_ = 2; publish(2); update_buttons(); }
-    void resume_clicked()  { state_ = 1; publish(3); update_buttons(); }
-    void home_clicked()    { state_ = 0; publish(0); update_buttons(); }
+    void start_clicked()  { state_ = 1; publish(1); update_buttons(); }
+    void stop_clicked()   { state_ = 2; publish(2); update_buttons(); }
+    void resume_clicked() { state_ = 1; publish(3); update_buttons(); }
+    void home_clicked()   { state_ = 0; publish(0); update_buttons(); }
 
     // ---------------- UI STATE ----------------
     void update_buttons()
@@ -153,7 +123,6 @@ private:
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
-
     QApplication app(argc, argv);
 
     auto gui = std::make_shared<ControlGUI>();

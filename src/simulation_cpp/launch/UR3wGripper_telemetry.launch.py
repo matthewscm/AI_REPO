@@ -14,7 +14,7 @@ def generate_launch_description():
     ur_driver_pkg = get_package_share_directory('ur_robot_driver')
 
     # Common Arguments
-    robot_ip = '192.168.0.191'
+    robot_ip = '192.168.0.192'
     ur_type = 'ur3e'  # Standardized to ur3e
 
     # -----------------------------------------------------
@@ -43,7 +43,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             'ur_type': 'ur3e',
-            'robot_ip': '192.168.1.100',
+            'robot_ip': '192.168.0.192',
             'use_sim_time': 'false',
             'use_fake_hardware': 'false',
             'onrobot_type': 'rg2',
@@ -52,6 +52,7 @@ def generate_launch_description():
             'description_file': 'ur_onrobot.urdf.xacro', 
         }.items()
     )
+    
 
     return LaunchDescription([
         ur_driver_launch,

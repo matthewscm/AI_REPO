@@ -18,6 +18,7 @@ find_package(OpenCV REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(image_transport REQUIRED)
 
 # Add your executable
 add_executable(camera_node src/camera_node.cpp)
@@ -48,11 +49,13 @@ ament_target_dependencies(bottle_test_publisher
 ament_target_dependencies(mission_control_gui
   rclcpp
   std_msgs
+  image_transport
+  OpenCV
+  cv_bridge
+  sensor_msgs
 )
 
-target_link_libraries(mission_control_gui
-  Qt5::Widgets
-)
+target_link_libraries(mission_control_gui Qt5::Widgets ${OpenCV_LIBS})
 
 # Install the executable
 install(TARGETS
