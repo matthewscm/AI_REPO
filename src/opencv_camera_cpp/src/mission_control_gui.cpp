@@ -111,8 +111,8 @@ private:
         start_btn_->setVisible(state_ == 0);
 
         stop_btn_->setVisible(state_ == 1);
-        resume_btn_->setVisible(state_ == 3);
-        home_btn_->setVisible(state_ == 0);
+        resume_btn_->setVisible(state_ == 2);
+        home_btn_->setVisible(state_ == 1);
 
         exit_btn_->setVisible(true);
     }
