@@ -11,13 +11,11 @@
 #include <mutex>
 #include <iomanip>
 #include <sstream>
-#include <chrono>
-#include <thread>
 
 class BottleClassifierNode : public rclcpp::Node
 {
 public:
-    BottleClassifierNode() : Node("bottle_classifier_node")
+    BottleClassifierNode() : Node("bottle_classifier_node"), idle_(true), readings_count_(0), sum_x_(0.0), sum_y_(0.0), sum_z_(0.0)
     {
         // 1. Initialize QoS settings for sensor data
         rclcpp::QoS qos(10);
@@ -30,52 +28,31 @@ public:
         center_pub_ = this->create_publisher<geometry_msgs::msg::Point>("bottle_center", 10);
         avg_center_pub_ = this->create_publisher<geometry_msgs::msg::Point>("bottle_center_average", 10);
 
+        rclcpp::QoS narrow_qos(1); // Only keep the very latest frame
+        narrow_qos.reliability(rclcpp::ReliabilityPolicy::BestEffort);
+
         // 3. Initialize subscriptions for Depth and RGB topics
         depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
-            "camera/camera/aligned_depth_to_color/image_raw", qos,
+            "camera/camera/aligned_depth_to_color/image_raw", narrow_qos,
             std::bind(&BottleClassifierNode::depth_callback, this, std::placeholders::_1));
 
         rgb_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             "camera/camera/color/image_raw", qos,
             std::bind(&BottleClassifierNode::image_callback, this, std::placeholders::_1));
 
-        // 4. Set a timer to shut down the node after 5 seconds and publish averages
-        shutdown_timer_ = this->create_wall_timer(
-            std::chrono::seconds(20),
-            [this]() {
-                if (detection_count_ > 0) {
-                    double avg_x = sum_x_ / detection_count_;
-                    double avg_y = sum_y_ / detection_count_;
-                    double avg_z = sum_z_ / detection_count_;
-                    
-                    RCLCPP_INFO(this->get_logger(), "=========================================");
-                    RCLCPP_INFO(this->get_logger(), "FINAL AVERAGE CENTER: (%.2f, %.2f, %.3fm)", avg_x, avg_y, avg_z);
-                    RCLCPP_INFO(this->get_logger(), "Total Valid Detections: %d", detection_count_);
-                    RCLCPP_INFO(this->get_logger(), "=========================================");
+        // Fixed the std::bind to point to the correct callback function in this class
+        sys_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+            "system_command", 10, 
+            std::bind(&BottleClassifierNode::sys_callback, this, std::placeholders::_1));
 
-                    geometry_msgs::msg::Point avg_msg;
-                    avg_msg.x = avg_x;
-                    avg_msg.y = avg_y;
-                    avg_msg.z = avg_z;
-                    avg_center_pub_->publish(avg_msg);
-                    
-                    // Small delay to ensure the final message is sent before the node exits
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                } else {
-                    RCLCPP_INFO(this->get_logger(), "No bottles detected during the 5 seconds. No average to publish.");
-                }
-
-                RCLCPP_INFO(this->get_logger(), "5 seconds have elapsed. Auto-shutting down node.");
-                rclcpp::shutdown();
-            });
-
-        RCLCPP_INFO(this->get_logger(), "RGB-D Multi-Categorizer Node started. Will automatically shut down in 5 seconds...");
+        RCLCPP_INFO(this->get_logger(), "Bottle Classifier Started. Idling until '4' is received on 'system_command' topic.");
     }
 
 private:
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr rgb_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
-    rclcpp::TimerBase::SharedPtr shutdown_timer_;
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sys_sub_;
+    
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr category_pub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr class_id_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
@@ -85,11 +62,28 @@ private:
     cv::Mat latest_depth_img_;
     std::mutex depth_mutex_;
 
-    // Variables to accumulate values for the final average
-    double sum_x_ = 0.0;
-    double sum_y_ = 0.0;
-    double sum_z_ = 0.0;
-    int detection_count_ = 0;
+    bool idle_; // State flag to control when to process a frame
+    int readings_count_; // Counter for averaging
+    double sum_x_;
+    double sum_y_;
+    double sum_z_;
+
+    // Callback to trigger processing when '4' is received
+    void sys_callback(const std_msgs::msg::Int32::ConstSharedPtr& msg)
+    {
+        if (msg->data == 4) {
+            if (idle_) {
+                RCLCPP_INFO(this->get_logger(), "Received command 4. Collecting 10 frames for average...");
+                readings_count_ = 0;
+                sum_x_ = 0.0;
+                sum_y_ = 0.0;
+                sum_z_ = 0.0;
+                idle_ = false; // Wake up
+            } else {
+                RCLCPP_WARN(this->get_logger(), "Received command 4, but already processing frames. Ignoring.");
+            }
+        }
+    }
 
     // Callback to store the latest aligned depth image
     void depth_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
@@ -107,6 +101,11 @@ private:
     // Main callback executed whenever an RGB image arrives
     void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
     {
+        // 1. If we are in IDLE mode, immediately exit without doing expensive processing
+        if (idle_) {
+            return;
+        }
+
         try
         {
             // --- STEP 1: Convert ROS message to OpenCV format ---
@@ -165,17 +164,17 @@ private:
 
             // Hierarchical check: Red [0] -> Green [1] -> Blue [2]
             if (red_info.first > min_area_threshold) {
-                category = "Red Label Bottle";
+                category = "Red Cap Bottle";
                 class_id = 0;
                 best_bbox = red_info.second;
                 box_color = cv::Scalar(0, 0, 255); // BGR Red
             } else if (green_info.first > min_area_threshold) {
-                category = "Green Label Bottle";
+                category = "Green Cap Bottle";
                 class_id = 1;
                 best_bbox = green_info.second;
                 box_color = cv::Scalar(0, 255, 0); // BGR Green
             } else if (blue_info.first > min_area_threshold) {
-                category = "Blue Label Bottle";
+                category = "Blue Cap Bottle";
                 class_id = 2;
                 best_bbox = blue_info.second;
                 box_color = cv::Scalar(255, 0, 0); // BGR Blue
@@ -223,11 +222,31 @@ private:
                 center_msg.z = depth_z;
                 center_pub_->publish(center_msg);
 
-                // Accumulate data for the final average
+                // Accumulate readings for average
                 sum_x_ += center_x;
                 sum_y_ += center_y;
                 sum_z_ += depth_z;
-                detection_count_++;
+                readings_count_++;
+
+                RCLCPP_INFO(this->get_logger(),
+                            "Detected [%d/10]: [%s] | ID: %d | Center: (%d, %d, %.3fm) | (R Area:%.0f, G Area:%.0f, B Area:%.0f)", 
+                            readings_count_, category.c_str(), class_id, center_x, center_y, depth_z, red_info.first, green_info.first, blue_info.first);
+                
+                // If we've reached 10 readings, publish the average and return to IDLE
+                if (readings_count_ >= 10) {
+                    geometry_msgs::msg::Point avg_msg;
+                    // X = (avg.msg.x - cx) * Z / fx 
+                    // Y = (avg.msg.y - cy) * Z / fy
+                    avg_msg.x = sum_x_ / 10.0;
+                    avg_msg.y = sum_y_ / 10.0;
+                    avg_msg.z = sum_z_ / 10.0;
+                    avg_center_pub_->publish(avg_msg);
+
+                    RCLCPP_INFO(this->get_logger(), "Collected 10 readings. Average published: (%.1f, %.1f, %.3f). Returning to IDLE.", avg_msg.x, avg_msg.y, avg_msg.z);
+                    idle_ = true; 
+                }
+            } else {
+                RCLCPP_WARN(this->get_logger(), "Triggered, but no bottle detected in the frame.");
             }
 
             // Publish the string category
@@ -245,16 +264,11 @@ private:
                 cv_bridge::CvImage(msg->header, "bgr8", display_img).toImageMsg();
             image_pub_->publish(*out_img_msg);
 
-            // Log output to terminal ONLY every 250 ms (0.25 seconds)
-            RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 250, 
-                        "Detected: [%s] | ID: %d | Center: (%d, %d, %.3fm) | (R Area:%.0f, G Area:%.0f, B Area:%.0f)", 
-                        category.c_str(), class_id, center_x, center_y, depth_z, red_info.first, green_info.first, blue_info.first);
-
         }
         catch (cv_bridge::Exception& e)
         {
             RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
-            return;
+            idle_ = true; // Ensure we go back to idle if an error breaks the pipeline
         }
     }
 };
