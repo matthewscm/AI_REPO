@@ -1,6 +1,26 @@
 # RS2
 Repository for RS2 work
 
+# Navigate to workspace root
+cd ~/ros2_ws
+
+# Build
+colcon build --symlink-install
+
+# Source the workspace
+source install/setup.bash
+
+# Run Main Launch File
+ros2 launch opencv_camera_cpp mission_control.launch.py
+
+
+
+
+
+-------------------------------------------------------------
+
+
+
 # OpenCV Camera Package 
 RUN  
 
