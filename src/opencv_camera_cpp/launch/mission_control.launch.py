@@ -51,7 +51,7 @@ def generate_launch_description():
 
         # -------- Static Workspace --------
         TimerAction(
-            period=2.0,
+            period=4.0,
             actions=[
                 Node(
                     package='simulation_cpp',
@@ -64,7 +64,7 @@ def generate_launch_description():
 
         # -------- Camera Node --------
         TimerAction(
-            period=3.0,
+            period=6.0,
             actions=[
                 Node(
                     package='opencv_camera_cpp',
@@ -77,7 +77,7 @@ def generate_launch_description():
 
         # -------- Classifier --------
         TimerAction(
-            period=4.0,
+            period=8.0,
             actions=[
                 Node(
                     package='rs2_image_processing_package',
@@ -90,7 +90,7 @@ def generate_launch_description():
 
         # -------- GUI --------
         TimerAction(
-            period=4.5,
+            period=10.0,
             actions=[
                 Node(
                     package='opencv_camera_cpp',
