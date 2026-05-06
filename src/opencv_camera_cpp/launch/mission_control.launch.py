@@ -39,12 +39,26 @@ def generate_launch_description():
         # -------- Robot stack first --------
         ur_onrobot_launch,
 
+
         # -------- Delay RealSense slightly --------
         TimerAction(
             period=2.0,
             actions=[
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(realsense_launch)
+                ),
+            ]
+        ),
+
+        # -------- Static Workspace --------
+        TimerAction(
+            period=2.0,
+            actions=[
+                Node(
+                    package='simulation_cpp',
+                    executable='static_workspace_node',
+                    name='static_workspace',
+                    output='screen'
                 ),
             ]
         ),
