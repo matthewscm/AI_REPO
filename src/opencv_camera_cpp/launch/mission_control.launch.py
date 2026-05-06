@@ -39,7 +39,6 @@ def generate_launch_description():
         # -------- Robot stack first --------
         ur_onrobot_launch,
 
-
         # -------- Delay RealSense slightly --------
         TimerAction(
             period=2.0,
