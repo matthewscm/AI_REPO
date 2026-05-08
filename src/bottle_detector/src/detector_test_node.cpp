@@ -78,9 +78,10 @@ namespace feature_extractor {
         if (image.empty()) return {0, 0, 0, 0, 0};
         float width = static_cast<float>(image.cols);
         float height = static_cast<float>(image.rows);
+        float aspect_ratio = width / height;
         cv::Mat cropped = centre_crop(image);
         cv::Vec3f hsv = dominant_hsv(cropped);
-        return {width, height, hsv[0], hsv[1], hsv[2]};
+        return {width, height, aspect_ratio, hsv[0], hsv[1], hsv[2]};
     }
 }
 
@@ -213,8 +214,8 @@ public:
                 
                 // Log the results directly to the console
                 RCLCPP_INFO(this->get_logger(), 
-                    "Bottle %zu: Width=%.0fpx, Height=%.0fpx | HSV=(%.1f, %.1f, %.1f)", 
-                    i + 1, features[0], features[1], features[2], features[3], features[4]);
+                    "Bottle %zu: Width=%.0fpx, Height=%.0fpx, Aspect Ratio=%.2f | HSV=(%.1f, %.1f, %.1f)", 
+                    i + 1, features[0], features[1], features[2], features[3], features[4], features[5]);
             }
 
             // Draw bounding boxes (using original box to keep visual proportions)
