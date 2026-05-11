@@ -10,12 +10,13 @@ endif()
 # ---------------------------------------------------------
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 
-# OpenCV setup - including ml for SVM and dnn for YOLO
+# OpenCV setup
 set(OpenCV_DIR "/usr/local/lib/cmake/opencv4")
 find_package(OpenCV REQUIRED COMPONENTS core imgproc dnn ml highgui)
 
@@ -40,28 +41,43 @@ add_executable(svm_trainer src/svm_trainer.cpp)
 target_link_libraries(svm_trainer ${OpenCV_LIBRARIES})
 ament_target_dependencies(svm_trainer 
   rclcpp 
+  std_msgs
   ament_index_cpp
 )
 
-# 3. The SVM Model Evaulator:
+# 3. The SVM Model Evaluator
 add_executable(svm_test_accuracy src/svm_test_accuracy.cpp)
 target_link_libraries(svm_test_accuracy ${OpenCV_LIBRARIES})
-ament_target_dependencies(svm_test_accuracy rclcpp ament_index_cpp)
+ament_target_dependencies(svm_test_accuracy 
+  rclcpp 
+  std_msgs
+  ament_index_cpp
+)
 
+# 4. The New SVM Inference Node
+add_executable(svm_node src/svm_node.cpp)
+target_link_libraries(svm_node ${OpenCV_LIBRARIES})
+ament_target_dependencies(svm_node 
+  rclcpp 
+  std_msgs
+  ament_index_cpp
+)
 
 # ---------------------------------------------------------
 # Install Rules
 # ---------------------------------------------------------
 
-# Install executables to lib/package_name
+# Install all executables
 install(TARGETS 
   detector_test_node 
   svm_trainer
   svm_test_accuracy
+  svm_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # Install models and data directories to share/package_name
+# This ensures svm_node can find the .xml files via ament_index_cpp
 install(DIRECTORY models data images
   DESTINATION share/${PROJECT_NAME}
 )

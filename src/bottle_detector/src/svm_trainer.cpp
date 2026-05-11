@@ -130,10 +130,10 @@ int main(int, char**) {
         cv::Mat train_scaled = scale_features(train_data_raw, mean, stddev);
         cv::Mat test_scaled = scale_features(test_data_raw, mean, stddev);
 
-        // // Save scaling
-        // cv::FileStorage fs("scaling_params.xml", cv::FileStorage::WRITE);
-        // fs << "mean" << mean << "stddev" << stddev;
-        // fs.release();
+        // Save scaling
+        cv::FileStorage fs("scaling_params.xml", cv::FileStorage::WRITE);
+        fs << "mean" << mean << "stddev" << stddev;
+        fs.release();
 
         // 4. Train
         cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
@@ -147,8 +147,8 @@ int main(int, char**) {
         std::cout << "Train Accuracy: " << evaluate_model(svm, train_scaled, train_labels) << "%" << std::endl;
         std::cout << "Test Accuracy: " << evaluate_model(svm, test_scaled, test_labels) << "%" << std::endl;
 
-        // svm->save("bottle_svm_model.xml");
-        // std::cout << "SUCCESS: Model and scaling saved." << std::endl;
+        svm->save("bottle_svm_model.xml");
+        std::cout << "SUCCESS: Model and scaling saved." << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << std::endl;
