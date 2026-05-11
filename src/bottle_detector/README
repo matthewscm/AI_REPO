@@ -1,0 +1,11 @@
+# Navigate to workspace root
+cd ~/ros2_ws
+
+# Build
+colcon build --symlink-install --packages-select bottle_detector
+
+# Source the workspace
+source install/setup.bash
+
+# Run SVM Node:
+ros2 run bottle_detector svm_trainer

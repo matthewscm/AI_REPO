@@ -5,36 +5,72 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# ---------------------------------------------------------
+# Find Dependencies
+# ---------------------------------------------------------
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
-set(OpenCV_DIR "/usr/local/lib/cmake/opencv4")
-find_package(OpenCV REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS dnn imgproc)
 find_package(ament_index_cpp REQUIRED)
 
+# OpenCV setup - including ml for SVM and dnn for YOLO
+set(OpenCV_DIR "/usr/local/lib/cmake/opencv4")
+find_package(OpenCV REQUIRED COMPONENTS core imgproc dnn ml highgui)
+
+# ---------------------------------------------------------
+# Executables
+# ---------------------------------------------------------
+
+# 1. The Main Detection Node
 add_executable(detector_test_node src/detector_test_node.cpp)
-ament_target_dependencies(detector_test_node rclcpp OpenCV ament_index_cpp)
+target_link_libraries(detector_test_node ${OpenCV_LIBRARIES})
+ament_target_dependencies(detector_test_node 
+  rclcpp 
+  cv_bridge 
+  sensor_msgs 
+  image_transport 
+  ament_index_cpp
+)
 
-# This tells ROS2 where to put the executable
-install(TARGETS detector_test_node
-  DESTINATION lib/${PROJECT_NAME})
+# 2. The SVM Training Executable
+add_executable(svm_trainer src/svm_trainer.cpp)
+target_link_libraries(svm_trainer ${OpenCV_LIBRARIES})
+ament_target_dependencies(svm_trainer 
+  rclcpp 
+  ament_index_cpp
+)
 
-# This tells ROS2 where to put your model so the code can find it
-install(DIRECTORY models
-  DESTINATION share/${PROJECT_NAME})
+# 3. The SVM Model Evaulator:
+add_executable(svm_test_accuracy src/svm_test_accuracy.cpp)
+target_link_libraries(svm_test_accuracy ${OpenCV_LIBRARIES})
+ament_target_dependencies(svm_test_accuracy rclcpp ament_index_cpp)
 
+
+# ---------------------------------------------------------
+# Install Rules
+# ---------------------------------------------------------
+
+# Install executables to lib/package_name
+install(TARGETS 
+  detector_test_node 
+  svm_trainer
+  svm_test_accuracy
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install models and data directories to share/package_name
+install(DIRECTORY models data
+  DESTINATION share/${PROJECT_NAME}
+)
+
+# ---------------------------------------------------------
+# Testing & Linting
+# ---------------------------------------------------------
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
   set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
