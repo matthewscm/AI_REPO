@@ -29,6 +29,7 @@ target_link_libraries(detector_test_node ${OpenCV_LIBRARIES})
 ament_target_dependencies(detector_test_node 
   rclcpp 
   cv_bridge 
+  std_msgs
   sensor_msgs 
   image_transport 
   ament_index_cpp
@@ -61,7 +62,7 @@ install(TARGETS
 )
 
 # Install models and data directories to share/package_name
-install(DIRECTORY models data
+install(DIRECTORY models data images
   DESTINATION share/${PROJECT_NAME}
 )
 

@@ -5,18 +5,24 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include "std_msgs/msg/float32_multi_array.hpp"
 
-// ── Feature Extractor Constants & Helpers ──────────────────────────────────────
+// ── Feature Extractor (Mirrors Python feature_extractor.py) ──────────────────
 
 namespace feature_extractor {
+    // Constants from Python
     const int H_BINS = 36;
     const int S_BINS = 32;
     const int V_BINS = 32;
     const int MIN_SATURATION = 30;
     const float MIN_COLOUR_PIXEL_RATIO = 0.05f;
-    const float LABEL_X_MARGIN = 0.20f;
-    const float LABEL_Y_MARGIN = 0.25f;
+    const float LABEL_X_MARGIN = 0.20f; // Remove 20% from each horizontal side
+    const float LABEL_Y_MARGIN = 0.25f; // Remove 25% from top and bottom
 
+    /**
+     * Discards outer margins to focus on the label area. 
+     * Mirrors _centre_crop in Python.
+     */
     cv::Mat centre_crop(const cv::Mat& img) {
         int h = img.rows;
         int w = img.cols;
@@ -25,6 +31,7 @@ namespace feature_extractor {
         int y1 = static_cast<int>(h * LABEL_Y_MARGIN);
         int y2 = static_cast<int>(h * (1.0f - LABEL_Y_MARGIN));
 
+        // Fallback if the crop is too small (e.g., < 10x10)
         if ((x2 - x1) < 10 || (y2 - y1) < 10) {
             return img; 
         }
@@ -35,17 +42,18 @@ namespace feature_extractor {
         cv::Mat img_hsv;
         cv::cvtColor(img_bgr, img_hsv, cv::COLOR_BGR2HSV);
 
+        // Mask pixels below MIN_SATURATION
         std::vector<cv::Mat> hsv_channels;
         cv::split(img_hsv, hsv_channels);
         cv::Mat s_ch = hsv_channels[1];
+        cv::Mat mask;
+        cv::compare(s_ch, MIN_SATURATION, mask, cv::CMP_GE);
 
-        cv::Mat colour_mask;
-        cv::compare(s_ch, MIN_SATURATION, colour_mask, cv::CMP_GE);
-
-        int n_colour = cv::countNonZero(colour_mask);
+        int n_colour = cv::countNonZero(mask);
         int n_total = img_hsv.rows * img_hsv.cols;
         int min_required = std::max(1, static_cast<int>(n_total * MIN_COLOUR_PIXEL_RATIO));
 
+        // Fallback to per-channel mean if too few coloured pixels
         if (n_colour < min_required) {
             cv::Scalar mean_val = cv::mean(img_hsv);
             return cv::Vec3f(static_cast<float>(mean_val[0]), 
@@ -53,6 +61,7 @@ namespace feature_extractor {
                              static_cast<float>(mean_val[2]));
         }
 
+        // Build 3D Histogram
         int channels[] = {0, 1, 2};
         int histSize[] = {H_BINS, S_BINS, V_BINS};
         float h_ranges[] = {0, 180.0f};
@@ -61,26 +70,34 @@ namespace feature_extractor {
         const float* ranges[] = {h_ranges, s_ranges, v_ranges};
 
         cv::Mat hist;
-        cv::calcHist(&img_hsv, 1, channels, colour_mask, hist, 3, histSize, ranges);
+        cv::calcHist(&img_hsv, 1, channels, mask, hist, 3, histSize, ranges);
 
         int maxIdx[3] = {0, 0, 0};
-        double maxVal = 0.0;
-        cv::minMaxIdx(hist, nullptr, &maxVal, nullptr, maxIdx);
+        cv::minMaxIdx(hist, nullptr, nullptr, nullptr, maxIdx);
 
-        float dom_h = h_ranges[0] + (maxIdx[0] + 0.5f) * ((h_ranges[1] - h_ranges[0]) / H_BINS);
-        float dom_s = s_ranges[0] + (maxIdx[1] + 0.5f) * ((s_ranges[1] - s_ranges[0]) / S_BINS);
-        float dom_v = v_ranges[0] + (maxIdx[2] + 0.5f) * ((v_ranges[1] - v_ranges[0]) / V_BINS);
+        // Midpoint calculation matches (edges[idx] + edges[idx+1]) / 2
+        float dom_h = (maxIdx[0] + 0.5f) * (180.0f / H_BINS);
+        float dom_s = (maxIdx[1] + 0.5f) * (256.0f / S_BINS);
+        float dom_v = (maxIdx[2] + 0.5f) * (256.0f / V_BINS);
 
         return cv::Vec3f(dom_h, dom_s, dom_v);
     }
 
-    std::vector<float> extract(const cv::Mat& image) {
-        if (image.empty()) return {0, 0, 0, 0, 0};
-        float width = static_cast<float>(image.cols);
-        float height = static_cast<float>(image.rows);
+    /**
+     * Main entry point. Returns [width, height, aspect_ratio, H, S, V].
+     */
+    std::vector<float> extract(const cv::Mat& cropped_bottle_image) {
+        if (cropped_bottle_image.empty()) return {0, 0, 0, 0, 0, 0};
+        
+        // Report original dimensions
+        float width = static_cast<float>(cropped_bottle_image.cols);
+        float height = static_cast<float>(cropped_bottle_image.rows);
         float aspect_ratio = width / height;
-        cv::Mat cropped = centre_crop(image);
-        cv::Vec3f hsv = dominant_hsv(cropped);
+        
+        // Apply centre-crop before HSV analysis
+        cv::Mat focused_region = centre_crop(cropped_bottle_image);
+        cv::Vec3f hsv = dominant_hsv(focused_region);
+        
         return {width, height, aspect_ratio, hsv[0], hsv[1], hsv[2]};
     }
 }
@@ -90,12 +107,15 @@ namespace feature_extractor {
 class BottleDetectorTestNode : public rclcpp::Node {
 public:
     BottleDetectorTestNode() : Node("bottle_detector_test") {
+
+        feature_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("bottle_features", 10);
+
         RCLCPP_INFO(this->get_logger(), "Starting Static Image Bottle Test...");
 
         // 1. Resolve Paths
         std::string pkg_share = ament_index_cpp::get_package_share_directory("bottle_detector");
         std::string model_path = pkg_share + "/models/yolov8s.onnx";
-        std::string image_path = "/home/connor/ros2_ws/src/bottle_detector/images/Assorted_bottles.jpeg";
+        std::string image_path = pkg_share + "/images/Fanta_bottle.jpg";
 
         // 2. Load the Image
         cv::Mat frame = cv::imread(image_path);
@@ -198,6 +218,8 @@ public:
 
         RCLCPP_INFO(this->get_logger(), "Detected %zu bottles after NMS.", indices.size());
 
+        auto feature_msg = std_msgs::msg::Float32MultiArray();
+
         // 9. Extract Features, Draw Boxes and Save
         for (size_t i = 0; i < indices.size(); ++i) {
             int idx = indices[i];
@@ -211,6 +233,8 @@ public:
                 // Extract features for this specific bottle
                 cv::Mat bottle_crop = frame(safe_box);
                 std::vector<float> features = feature_extractor::extract(bottle_crop);
+
+                feature_msg.data.insert(feature_msg.data.end(), features.begin(), features.end());
                 
                 // Log the results directly to the console
                 RCLCPP_INFO(this->get_logger(), 
@@ -230,12 +254,23 @@ public:
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 0, 0), 2);
         }
 
+        if (!feature_msg.data.empty()) {
+            feature_pub_->publish(feature_msg);
+            RCLCPP_INFO(this->get_logger(), "Published features for %zu bottles.", indices.size());
+        } else {
+            RCLCPP_WARN(this->get_logger(), "No features to publish.");
+        }
+
         // Fixed string to avoid overwriting original source image if in same directory
         cv::imwrite("RGB_bottles_results.png", frame);
         RCLCPP_INFO(this->get_logger(), "Saved output to 'RGB_bottles_results.png'");
         
+        rclcpp::sleep_for(std::chrono::milliseconds(500)); // Brief pause to ensure all logs are flushed before shutdown
         rclcpp::shutdown();
     }
+
+private:
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr feature_pub_;
 };
 
 int main(int argc, char **argv) {
