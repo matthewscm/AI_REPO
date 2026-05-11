@@ -3,103 +3,155 @@
 #include <sstream>
 #include <vector>
 #include <string>
+#include <stdexcept>
+#include <algorithm>
+#include <cctype>
+#include <random>
+#include <numeric>
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/ml.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
-// Helper to read CSV into OpenCV Mats
+// --- HELPER FUNCTIONS (Must be above main) ---
+
+std::string trim(const std::string& str) {
+    size_t first = str.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    size_t last = str.find_last_not_of(" \t\r\n");
+    return str.substr(first, last - first + 1);
+}
+
+std::string to_lowercase(std::string str) {
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return str;
+}
+
+int parse_label(const std::string& raw_label) {
+    std::string label = to_lowercase(trim(raw_label));
+    return (label == "recyclable") ? 1 : 0;
+}
+
 void load_dataset(const std::string& filename, cv::Mat& data, cv::Mat& labels) {
     std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
-    }
+    if (!file.is_open()) throw std::runtime_error("Could not open file: " + filename);
 
     std::string line;
     std::vector<float> feature_vec;
     std::vector<int> label_vec;
 
     std::getline(file, line); // Skip header
-
     while (std::getline(file, line)) {
         std::stringstream ss(line);
         std::string value;
         std::vector<std::string> row;
-
-        while (std::getline(ss, value, ',')) {
-            row.push_back(value);
-        }
+        while (std::getline(ss, value, ',')) row.push_back(value);
 
         if (row.size() < 7) continue;
 
-        // Features: Height, Width, H, S, V (Indices 1-5)
         try {
             for (int i = 1; i <= 5; ++i) {
-                feature_vec.push_back(std::stof(row[i]));
+                feature_vec.push_back(std::stof(trim(row[i])));
             }
-            // Labels: "Recyclable" -> 1, else 0
-            label_vec.push_back((row[6] == "Recyclable") ? 1 : 0);
-        } catch (...) {
-            continue; // Skip rows with bad numeric data
-        }
+            label_vec.push_back(parse_label(row[6]));
+        } catch (...) { continue; }
     }
 
-    data = cv::Mat(feature_vec.size() / 5, 5, CV_32F, feature_vec.data()).clone();
-    labels = cv::Mat(label_vec.size(), 1, CV_32S, label_vec.data()).clone();
+    data = cv::Mat(static_cast<int>(label_vec.size()), 5, CV_32F, feature_vec.data()).clone();
+    labels = cv::Mat(static_cast<int>(label_vec.size()), 1, CV_32S, label_vec.data()).clone();
 }
+
+void compute_feature_scaling(const cv::Mat& data, cv::Mat& mean, cv::Mat& stddev) {
+    mean = cv::Mat(1, data.cols, CV_32F);
+    stddev = cv::Mat(1, data.cols, CV_32F);
+    for (int col = 0; col < data.cols; ++col) {
+        cv::Scalar m, s;
+        cv::meanStdDev(data.col(col), m, s);
+        mean.at<float>(0, col) = static_cast<float>(m[0]);
+        stddev.at<float>(0, col) = (static_cast<float>(s[0]) < 1e-6f) ? 1.0f : static_cast<float>(s[0]);
+    }
+}
+
+cv::Mat scale_features(const cv::Mat& data, const cv::Mat& mean, const cv::Mat& stddev) {
+    cv::Mat scaled(data.rows, data.cols, CV_32F);
+    for (int r = 0; r < data.rows; ++r) {
+        for (int c = 0; c < data.cols; ++c) {
+            scaled.at<float>(r, c) = (data.at<float>(r, c) - mean.at<float>(0, c)) / stddev.at<float>(0, c);
+        }
+    }
+    return scaled;
+}
+
+float evaluate_model(const cv::Ptr<cv::ml::SVM>& svm, const cv::Mat& data, const cv::Mat& labels) {
+    int correct = 0;
+    for (int i = 0; i < data.rows; ++i) {
+        if (static_cast<int>(svm->predict(data.row(i))) == labels.at<int>(i, 0)) correct++;
+    }
+    return 100.0f * static_cast<float>(correct) / static_cast<float>(data.rows);
+}
+
+// --- MAIN EXECUTION ---
 
 int main(int, char**) {
     try {
-        // --- Use ament_index_cpp to find the data file ---
         std::string pkg_share = ament_index_cpp::get_package_share_directory("bottle_detector");
         std::string csv_path = pkg_share + "/data/increased_recycling_dataset.csv";
-        
-        cv::Mat training_data, labels;
 
-        std::cout << "Loading dataset: " << csv_path << "..." << std::endl;
-        load_dataset(csv_path, training_data, labels);
+        cv::Mat raw_data, raw_labels;
+        std::cout << "Loading dataset..." << std::endl;
+        load_dataset(csv_path, raw_data, raw_labels);
 
-        if (training_data.empty()) {
-            throw std::runtime_error("Dataset is empty. Check your CSV content.");
+        // 1. Shuffle
+        std::vector<int> indices(raw_data.rows);
+        std::iota(indices.begin(), indices.end(), 0);
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(indices.begin(), indices.end(), g);
+
+        cv::Mat shuffled_data(raw_data.rows, raw_data.cols, raw_data.type());
+        cv::Mat shuffled_labels(raw_labels.rows, raw_labels.cols, raw_labels.type());
+        for (int i = 0; i < raw_data.rows; ++i) {
+            raw_data.row(indices[i]).copyTo(shuffled_data.row(i));
+            raw_labels.row(indices[i]).copyTo(shuffled_labels.row(i));
         }
 
-        // --- Step 3: Feature Scaling ---
+        // 2. Split (80/20)
+        int train_rows = static_cast<int>(shuffled_data.rows * 0.8);
+        cv::Mat train_data_raw = shuffled_data.rowRange(0, train_rows);
+        cv::Mat train_labels = shuffled_labels.rowRange(0, train_rows);
+        cv::Mat test_data_raw = shuffled_data.rowRange(train_rows, shuffled_data.rows);
+        cv::Mat test_labels = shuffled_labels.rowRange(train_rows, shuffled_data.rows);
+
+        // 3. Scale
         cv::Mat mean, stddev;
-        cv::meanStdDev(training_data, mean, stddev);
-        
-        // Save scaling parameters (saved to current directory where you run the node)
-        cv::FileStorage fs_scaling("scaling_params.xml", cv::FileStorage::WRITE);
-        fs_scaling << "mean" << mean;
-        fs_scaling << "stddev" << stddev;
-        fs_scaling.release();
+        compute_feature_scaling(train_data_raw, mean, stddev);
+        cv::Mat train_scaled = scale_features(train_data_raw, mean, stddev);
+        cv::Mat test_scaled = scale_features(test_data_raw, mean, stddev);
 
-        cv::Mat training_data_scaled;
-        for (int i = 0; i < training_data.rows; ++i) {
-            cv::Mat row = (training_data.row(i) - mean.t()) / stddev.t();
-            training_data_scaled.push_back(row);
-        }
+        // Save scaling
+        cv::FileStorage fs("scaling_params.xml", cv::FileStorage::WRITE);
+        fs << "mean" << mean << "stddev" << stddev;
+        fs.release();
 
-        // --- Step 4 & 5: SVM Setup and Training ---
+        // 4. Train
         cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
         svm->setType(cv::ml::SVM::C_SVC);
         svm->setKernel(cv::ml::SVM::RBF);
-        svm->setGamma(0.01); 
+        svm->setGamma(0.01);
         svm->setC(1.0);
-        svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, 100, 1e-6));
+        svm->train(train_scaled, cv::ml::ROW_SAMPLE, train_labels);
 
-        std::cout << "Training SVM... samples: " << training_data.rows << std::endl;
-        svm->train(training_data_scaled, cv::ml::ROW_SAMPLE, labels);
+        // 5. Accuracy
+        std::cout << "Train Accuracy: " << evaluate_model(svm, train_scaled, train_labels) << "%" << std::endl;
+        std::cout << "Test Accuracy: " << evaluate_model(svm, test_scaled, test_labels) << "%" << std::endl;
 
-        // Save the model
         svm->save("bottle_svm_model.xml");
-        std::cout << "------------------------------------------" << std::endl;
-        std::cout << "SUCCESS: Model saved to bottle_svm_model.xml" << std::endl;
-        std::cout << "SUCCESS: Scaling saved to scaling_params.xml" << std::endl;
-        std::cout << "------------------------------------------" << std::endl;
+        std::cout << "SUCCESS: Model and scaling saved." << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << std::endl;
         return 1;
     }
-
     return 0;
 }
