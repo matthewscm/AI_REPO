@@ -5,24 +5,23 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
-#include "std_msgs/msg/float32_multi_array.hpp"
 
-// ── Feature Extractor (Mirrors Python feature_extractor.py) ──────────────────
+// ROS 2 Message Headers
+#include "std_msgs/msg/float32_multi_array.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "cv_bridge/cv_bridge.h"
+
+// ── Feature Extractor (Matches Python Logic) ──────────────────────────────────
 
 namespace feature_extractor {
-    // Constants from Python
     const int H_BINS = 36;
     const int S_BINS = 32;
     const int V_BINS = 32;
     const int MIN_SATURATION = 30;
     const float MIN_COLOUR_PIXEL_RATIO = 0.05f;
-    const float LABEL_X_MARGIN = 0.20f; // Remove 20% from each horizontal side
-    const float LABEL_Y_MARGIN = 0.25f; // Remove 25% from top and bottom
+    const float LABEL_X_MARGIN = 0.20f; 
+    const float LABEL_Y_MARGIN = 0.25f; 
 
-    /**
-     * Discards outer margins to focus on the label area. 
-     * Mirrors _centre_crop in Python.
-     */
     cv::Mat centre_crop(const cv::Mat& img) {
         int h = img.rows;
         int w = img.cols;
@@ -31,10 +30,7 @@ namespace feature_extractor {
         int y1 = static_cast<int>(h * LABEL_Y_MARGIN);
         int y2 = static_cast<int>(h * (1.0f - LABEL_Y_MARGIN));
 
-        // Fallback if the crop is too small (e.g., < 10x10)
-        if ((x2 - x1) < 10 || (y2 - y1) < 10) {
-            return img; 
-        }
+        if ((x2 - x1) < 10 || (y2 - y1) < 10) return img; 
         return img(cv::Rect(x1, y1, x2 - x1, y2 - y1)).clone();
     }
 
@@ -42,7 +38,6 @@ namespace feature_extractor {
         cv::Mat img_hsv;
         cv::cvtColor(img_bgr, img_hsv, cv::COLOR_BGR2HSV);
 
-        // Mask pixels below MIN_SATURATION
         std::vector<cv::Mat> hsv_channels;
         cv::split(img_hsv, hsv_channels);
         cv::Mat s_ch = hsv_channels[1];
@@ -51,22 +46,16 @@ namespace feature_extractor {
 
         int n_colour = cv::countNonZero(mask);
         int n_total = img_hsv.rows * img_hsv.cols;
-        int min_required = std::max(1, static_cast<int>(n_total * MIN_COLOUR_PIXEL_RATIO));
-
-        // Fallback to per-channel mean if too few coloured pixels
-        if (n_colour < min_required) {
+        if (n_colour < std::max(1, static_cast<int>(n_total * MIN_COLOUR_PIXEL_RATIO))) {
             cv::Scalar mean_val = cv::mean(img_hsv);
-            return cv::Vec3f(static_cast<float>(mean_val[0]), 
-                             static_cast<float>(mean_val[1]), 
-                             static_cast<float>(mean_val[2]));
+            return cv::Vec3f(mean_val[0], mean_val[1], mean_val[2]);
         }
 
-        // Build 3D Histogram
         int channels[] = {0, 1, 2};
         int histSize[] = {H_BINS, S_BINS, V_BINS};
-        float h_ranges[] = {0, 180.0f};
-        float s_ranges[] = {0, 256.0f};
-        float v_ranges[] = {0, 256.0f};
+        float h_ranges[] = {0, 180};
+        float s_ranges[] = {0, 256};
+        float v_ranges[] = {0, 256};
         const float* ranges[] = {h_ranges, s_ranges, v_ranges};
 
         cv::Mat hist;
@@ -75,7 +64,6 @@ namespace feature_extractor {
         int maxIdx[3] = {0, 0, 0};
         cv::minMaxIdx(hist, nullptr, nullptr, nullptr, maxIdx);
 
-        // Midpoint calculation matches (edges[idx] + edges[idx+1]) / 2
         float dom_h = (maxIdx[0] + 0.5f) * (180.0f / H_BINS);
         float dom_s = (maxIdx[1] + 0.5f) * (256.0f / S_BINS);
         float dom_v = (maxIdx[2] + 0.5f) * (256.0f / V_BINS);
@@ -83,96 +71,96 @@ namespace feature_extractor {
         return cv::Vec3f(dom_h, dom_s, dom_v);
     }
 
-    /**
-     * Main entry point. Returns [width, height, aspect_ratio, H, S, V].
-     */
     std::vector<float> extract(const cv::Mat& cropped_bottle_image) {
         if (cropped_bottle_image.empty()) return {0, 0, 0, 0, 0, 0};
         
-        // Report original dimensions
         float width = static_cast<float>(cropped_bottle_image.cols);
         float height = static_cast<float>(cropped_bottle_image.rows);
-        float aspect_ratio = width / height;
+        // float aspect_ratio = width / height;
         
-        // Apply centre-crop before HSV analysis
         cv::Mat focused_region = centre_crop(cropped_bottle_image);
         cv::Vec3f hsv = dominant_hsv(focused_region);
         
-        return {width, height, aspect_ratio, hsv[0], hsv[1], hsv[2]};
+        return {width, height, hsv[0], hsv[1], hsv[2]};
     }
 }
 
-// ── ROS 2 Node ─────────────────────────────────────────────────────────────────
+// ── Continuous Live ROS 2 Node ────────────────────────────────────────────────
 
-class BottleDetectorTestNode : public rclcpp::Node {
+class BottleDetectorLiveNode : public rclcpp::Node {
 public:
-    BottleDetectorTestNode() : Node("bottle_detector_test") {
-
+    BottleDetectorLiveNode() : Node("bottle_detector_live") {
+        
+        // 1. Setup Publishers and Subscribers
         feature_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("bottle_features", 10);
+        
+        // Subscribe to RealSense color topic (update this string if your topic name is different)
+        image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+            "/camera/camera/color/image_raw", 10, 
+            std::bind(&BottleDetectorLiveNode::image_callback, this, std::placeholders::_1));
 
-        RCLCPP_INFO(this->get_logger(), "Starting Static Image Bottle Test...");
+        RCLCPP_INFO(this->get_logger(), "Initializing Live Bottle Detector Node...");
 
-        // 1. Resolve Paths
+        // 2. Load the Neural Network ONCE in the constructor
         std::string pkg_share = ament_index_cpp::get_package_share_directory("bottle_detector");
         std::string model_path = pkg_share + "/models/yolov8s.onnx";
-        std::string image_path = pkg_share + "/images/Fanta_bottle.jpg";
 
-        // 2. Load the Image
-        cv::Mat frame = cv::imread(image_path);
-        if (frame.empty()) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to load image: %s", image_path.c_str());
+        net_ = cv::dnn::readNet(model_path);
+        if (net_.empty()) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to load ONNX model from %s", model_path.c_str());
             return;
         }
 
-        // 3. Load the Neural Network
-        cv::dnn::Net net = cv::dnn::readNet(model_path);
-        if (net.empty()) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to load ONNX model!");
+        net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+        net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+        
+        RCLCPP_INFO(this->get_logger(), "Model loaded. Waiting for RealSense camera feed...");
+    }
+
+private:
+    cv::dnn::Net net_;
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr feature_pub_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
+
+    // This callback runs every time a new frame arrives from the camera
+    void image_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
+        cv::Mat frame;
+        
+        // Convert ROS image message to OpenCV Mat
+        try {
+            frame = cv_bridge::toCvCopy(msg, "bgr8")->image;
+        } catch (cv_bridge::Exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
             return;
         }
 
-        net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-        net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+        if (frame.empty()) return;
 
-        // 4. Pre-process (Strictly 640x640)
+        // 3. Pre-process and Inference
         cv::Mat blob;
         cv::dnn::blobFromImage(frame, blob, 1.0/255.0, cv::Size(640, 640), cv::Scalar(), true, false);
-        net.setInput(blob);
+        net_.setInput(blob);
 
-        // 5. Run Inference
-        RCLCPP_INFO(this->get_logger(), "Starting Inference...");
         std::vector<cv::Mat> outputs;
-        net.forward(outputs); 
+        net_.forward(outputs); 
 
-        // 6. Diagnostic Print & Safety Check
-        if (outputs.empty()) {
-            RCLCPP_ERROR(this->get_logger(), "Network produced no output!");
-            return;
-        }
+        if (outputs.empty()) return;
 
+        // 4. Universal Post-Processing
         cv::Mat output = outputs[0];
-        RCLCPP_INFO(this->get_logger(), "SUCCESS! Inference completed.");
-        
-        // 7. Universal Post-Processing
         cv::Mat data;
+        
         if (output.dims == 3) {
             int dim1 = output.size[1]; 
             int dim2 = output.size[2]; 
-            
             if (dim1 == 84 || dim1 == 85) {
-                data = cv::Mat(dim1, dim2, CV_32F, output.ptr<float>());
-                data = data.t(); 
+                data = cv::Mat(dim1, dim2, CV_32F, output.ptr<float>()).t(); 
             } else {
                 data = cv::Mat(dim1, dim2, CV_32F, output.ptr<float>());
             }
         } else if (output.dims == 2) {
             data = output;
-            if (data.rows == 84 || data.rows == 85) {
-                data = data.t();
-            }
-        } else {
-            RCLCPP_ERROR(this->get_logger(), "Unexpected output dimensions from ONNX!");
-            return;
+            if (data.rows == 84 || data.rows == 85) data = data.t();
         }
 
         std::vector<cv::Rect> boxes;
@@ -186,12 +174,9 @@ public:
 
         for (int i = 0; i < data.rows; ++i) {
             float bottle_score = 0.0f;
-
             if (has_objectness) {
                 float obj_conf = data.at<float>(i, 4);
-                if (obj_conf > 0.5) { 
-                    bottle_score = obj_conf * data.at<float>(i, class_offset + 39);
-                }
+                if (obj_conf > 0.5) bottle_score = obj_conf * data.at<float>(i, class_offset + 39); // 39 is COCO 'bottle'
             } else {
                 bottle_score = data.at<float>(i, class_offset + 39);
             }
@@ -204,78 +189,50 @@ public:
 
                 int left   = static_cast<int>((cx - w / 2) * x_scale);
                 int top    = static_cast<int>((cy - h / 2) * y_scale);
-                int width  = static_cast<int>(w * x_scale);
-                int height = static_cast<int>(h * y_scale);
-
-                boxes.push_back(cv::Rect(left, top, width, height));
+                boxes.push_back(cv::Rect(left, top, static_cast<int>(w * x_scale), static_cast<int>(h * y_scale)));
                 confidences.push_back(bottle_score);
             }
         }
 
-        // 8. Non-Maximum Suppression (NMS)
+        // 5. NMS & Feature Extraction
         std::vector<int> indices;
         cv::dnn::NMSBoxes(boxes, confidences, 0.5, 0.4, indices);
 
-        RCLCPP_INFO(this->get_logger(), "Detected %zu bottles after NMS.", indices.size());
-
         auto feature_msg = std_msgs::msg::Float32MultiArray();
 
-        // 9. Extract Features, Draw Boxes and Save
         for (size_t i = 0; i < indices.size(); ++i) {
             int idx = indices[i];
-            cv::Rect box = boxes[idx];
-
-            // Safety boundary check before cropping
-            cv::Rect frame_bounds(0, 0, frame.cols, frame.rows);
-            cv::Rect safe_box = box & frame_bounds;
+            cv::Rect safe_box = boxes[idx] & cv::Rect(0, 0, frame.cols, frame.rows);
 
             if (safe_box.width > 0 && safe_box.height > 0) {
-                // Extract features for this specific bottle
                 cv::Mat bottle_crop = frame(safe_box);
                 std::vector<float> features = feature_extractor::extract(bottle_crop);
 
                 feature_msg.data.insert(feature_msg.data.end(), features.begin(), features.end());
                 
-                // Log the results directly to the console
-                RCLCPP_INFO(this->get_logger(), 
-                    "Bottle %zu: Width=%.0fpx, Height=%.0fpx, Aspect Ratio=%.2f | HSV=(%.1f, %.1f, %.1f)", 
-                    i + 1, features[0], features[1], features[2], features[3], features[4], features[5]);
+                // Draw live bounding boxes
+                cv::rectangle(frame, safe_box, cv::Scalar(0, 255, 0), 3); 
+                std::string label = "Bottle: " + std::to_string(static_cast<int>(confidences[idx] * 100)) + "%";
+                cv::putText(frame, label, cv::Point(safe_box.x, safe_box.y - 10), 
+                            cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
             }
-
-            // Draw bounding boxes (using original box to keep visual proportions)
-            cv::rectangle(frame, box, cv::Scalar(0, 255, 0), 3); 
-            
-            std::string label = "Bottle: " + std::to_string(static_cast<int>(confidences[idx] * 100)) + "%";
-            int baseLine;
-            cv::Size labelSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.6, 2, &baseLine);
-            cv::rectangle(frame, cv::Point(box.x, box.y - labelSize.height - baseLine), 
-                          cv::Point(box.x + labelSize.width, box.y), cv::Scalar(0, 255, 0), cv::FILLED);
-            cv::putText(frame, label, cv::Point(box.x, box.y - baseLine), 
-                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 0, 0), 2);
         }
 
+        // 6. Publish Features
         if (!feature_msg.data.empty()) {
             feature_pub_->publish(feature_msg);
-            RCLCPP_INFO(this->get_logger(), "Published features for %zu bottles.", indices.size());
-        } else {
-            RCLCPP_WARN(this->get_logger(), "No features to publish.");
         }
 
-        // Fixed string to avoid overwriting original source image if in same directory
-        cv::imwrite("RGB_bottles_results.png", frame);
-        RCLCPP_INFO(this->get_logger(), "Saved output to 'RGB_bottles_results.png'");
-        
-        rclcpp::sleep_for(std::chrono::milliseconds(500)); // Brief pause to ensure all logs are flushed before shutdown
-        rclcpp::shutdown();
+        // 7. Show live feed via OpenCV Window
+        cv::imshow("Live Bottle Detections", frame);
+        cv::waitKey(1); // Required to refresh the UI window
     }
-
-private:
-    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr feature_pub_;
 };
 
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<BottleDetectorTestNode>();
-    rclcpp::spin(node);
+    auto node = std::make_shared<BottleDetectorLiveNode>();
+    rclcpp::spin(node); // This now loops continuously
+    rclcpp::shutdown();
     return 0;
 }
