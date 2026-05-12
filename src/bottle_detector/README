@@ -8,4 +8,4 @@ colcon build --symlink-install --packages-select bottle_detector
 source install/setup.bash
 
 # Run SVM Node:
-ros2 run bottle_detector svm_trainer
+ros2 run bottle_detector svm_node
