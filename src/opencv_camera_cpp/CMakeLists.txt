@@ -22,7 +22,6 @@ find_package(image_transport REQUIRED)
 
 # Add your executable
 add_executable(camera_node src/camera_node.cpp)
-add_executable(bottle_publisher src/bottle_publisher.cpp)
 add_executable(bottle_test_publisher src/bottle_test_publisher.cpp)
 add_executable(mission_control_gui src/mission_control_gui.cpp)
 
@@ -33,11 +32,6 @@ ament_target_dependencies(camera_node
   sensor_msgs
   cv_bridge 
   OpenCV
-)
-
-ament_target_dependencies(bottle_publisher
-  rclcpp
-  std_msgs
 )
 
 ament_target_dependencies(bottle_test_publisher
@@ -60,7 +54,6 @@ target_link_libraries(mission_control_gui Qt5::Widgets ${OpenCV_LIBS})
 # Install the executable
 install(TARGETS
   camera_node
-  bottle_publisher
   bottle_test_publisher
   mission_control_gui
   DESTINATION lib/${PROJECT_NAME}
