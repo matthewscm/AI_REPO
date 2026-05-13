@@ -26,7 +26,12 @@ ros2 run simulation_cpp bottle_spawner_node
 ros2 run simulation_cpp static_environment_node
 
 
+ros2 run simulation_cpp bottle_spawn_node
 
+
+ros2 topic pub -1 /bottle_class_id std_msgs/msg/Int32 "{data: 0}"
+
+ros2 topic pub -1 /bottle_center geometry_msgs/msg/Point "{x: 0.5, y: 0.0, z: 0.2}"
 
 
 
