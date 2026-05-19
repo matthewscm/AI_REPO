@@ -267,10 +267,11 @@
 // ROS 2 Message Headers
 #include "std_msgs/msg/float32_multi_array.hpp"
 #include "std_msgs/msg/int32.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "cv_bridge/cv_bridge.h"
 
-// ── Feature Extractor (Matches Python Logic) ──────────────────────────────────
+// ── Feature Extractor ─────────────────────────────────────────────────────────
 
 namespace feature_extractor {
     const int H_BINS = 36;
@@ -280,6 +281,16 @@ namespace feature_extractor {
     const float MIN_COLOUR_PIXEL_RATIO = 0.05f;
     const float LABEL_X_MARGIN = 0.20f; 
     const float LABEL_Y_MARGIN = 0.25f; 
+
+    std::string get_color_name(float h, float s, float v) {
+        if (v < 50.0f || s < 40.0f) return "Unknown";
+
+        if (h < 15.0f || h >= 165.0f) return "Red";
+        if (h >= 35.0f && h < 85.0f) return "Green";
+        if (h >= 85.0f && h < 135.0f) return "Blue";
+        
+        return "Unknown";
+    }
 
     cv::Mat centre_crop(const cv::Mat& img) {
         int h = img.rows;
@@ -335,7 +346,6 @@ namespace feature_extractor {
         
         float width = static_cast<float>(cropped_bottle_image.cols);
         float height = static_cast<float>(cropped_bottle_image.rows);
-        // float aspect_ratio = width / height;
         
         cv::Mat focused_region = centre_crop(cropped_bottle_image);
         cv::Vec3f hsv = dominant_hsv(focused_region);
@@ -350,23 +360,21 @@ class BottleDetectorLiveNode : public rclcpp::Node {
 public:
     BottleDetectorLiveNode() : Node("bottle_detector_live") {
 
-        bbox_pub_    = this->create_publisher<std_msgs::msg::Float32MultiArray>("bottle_bboxes", 10);
-        
-        // 1. Setup Publishers and Subscribers
-        feature_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("bottle_features", 10);
+        bbox_pub_      = this->create_publisher<std_msgs::msg::Float32MultiArray>("bottle_bboxes", 10);
+        color_pub_     = this->create_publisher<std_msgs::msg::String>("bottle_colors", 10);
+        color_int_pub_ = this->create_publisher<std_msgs::msg::Int32>("bottle_color_int", 10); // NEW Integer publisher
+        feature_pub_   = this->create_publisher<std_msgs::msg::Float32MultiArray>("bottle_features", 10);
 
         sys_sub_ = this->create_subscription<std_msgs::msg::Int32>(
             "system_command", 10,
             std::bind(&BottleDetectorLiveNode::sys_callback, this, std::placeholders::_1));
         
-        // Subscribe to RealSense color topic (update this string if your topic name is different)
         image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             "/camera/camera/color/image_raw", 10, 
             std::bind(&BottleDetectorLiveNode::image_callback, this, std::placeholders::_1));
 
         RCLCPP_INFO(this->get_logger(), "Initializing Live Bottle Detector Node...");
 
-        // 2. Load the Neural Network ONCE in the constructor
         std::string pkg_share = ament_index_cpp::get_package_share_directory("bottle_detector");
         std::string model_path = pkg_share + "/models/yolov8s.onnx";
 
@@ -386,6 +394,8 @@ private:
     cv::dnn::Net net_;
     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr feature_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr bbox_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr color_pub_;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr color_int_pub_; // NEW Integer Publisher declaration
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sys_sub_;
 
@@ -404,7 +414,6 @@ private:
         }
     }
 
-    // This callback runs every time a new frame arrives from the camera
     void image_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
         if (idle_) return;
 
@@ -416,7 +425,6 @@ private:
 
         cv::Mat frame;
         
-        // Convert ROS image message to OpenCV Mat
         try {
             frame = cv_bridge::toCvCopy(msg, "bgr8")->image;
         } catch (cv_bridge::Exception& e) {
@@ -426,7 +434,6 @@ private:
 
         if (frame.empty()) return;
 
-        // 3. Pre-process and Inference
         cv::Mat blob;
         cv::dnn::blobFromImage(frame, blob, 1.0/255.0, cv::Size(640, 640), cv::Scalar(), true, false);
         net_.setInput(blob);
@@ -436,7 +443,6 @@ private:
 
         if (outputs.empty()) return;
 
-        // 4. Universal Post-Processing
         cv::Mat output = outputs[0];
         cv::Mat data;
         
@@ -466,7 +472,7 @@ private:
             float bottle_score = 0.0f;
             if (has_objectness) {
                 float obj_conf = data.at<float>(i, 4);
-                if (obj_conf > 0.5) bottle_score = obj_conf * data.at<float>(i, class_offset + 39); // 39 is COCO 'bottle'
+                if (obj_conf > 0.5) bottle_score = obj_conf * data.at<float>(i, class_offset + 39); 
             } else {
                 bottle_score = data.at<float>(i, class_offset + 39);
             }
@@ -484,12 +490,12 @@ private:
             }
         }
 
-        // 5. NMS & Feature Extraction
         std::vector<int> indices;
         cv::dnn::NMSBoxes(boxes, confidences, 0.5, 0.4, indices);
 
         auto feature_msg = std_msgs::msg::Float32MultiArray();
         auto bbox_msg = std_msgs::msg::Float32MultiArray();
+        std::vector<std::string> detected_colors; 
 
         for (size_t i = 0; i < indices.size(); ++i) {
             int idx = indices[i];
@@ -499,6 +505,25 @@ private:
                 cv::Mat bottle_crop = frame(safe_box);
                 std::vector<float> features = feature_extractor::extract(bottle_crop);
 
+                std::string color_name = feature_extractor::get_color_name(features[2], features[3], features[4]);
+                detected_colors.push_back(color_name); 
+                
+                int conf_percentage = static_cast<int>(confidences[idx] * 100);
+
+                // --- NEW INT LOGIC ---
+                int color_int_code = -1; // Default to -1 for Unknown
+                if (color_name == "Red")   color_int_code = 0;
+                if (color_name == "Green") color_int_code = 1;
+                if (color_name == "Blue")  color_int_code = 2;
+
+                // Publish the Integer Message
+                std_msgs::msg::Int32 color_int_msg;
+                color_int_msg.data = color_int_code;
+                color_int_pub_->publish(color_int_msg);
+
+                // Terminal Logging
+                RCLCPP_INFO(this->get_logger(), "Detected %s Bottle (Confidence: %d%%) -> Int Code: %d", color_name.c_str(), conf_percentage, color_int_code);
+
                 feature_msg.data.insert(feature_msg.data.end(), features.begin(), features.end());
                 bbox_msg.data.insert(bbox_msg.data.end(), {
                     static_cast<float>(safe_box.x),
@@ -507,15 +532,15 @@ private:
                     static_cast<float>(safe_box.height),
                     confidences[idx]
                 });
-                // Draw live bounding boxes
+                
                 cv::rectangle(frame, safe_box, cv::Scalar(0, 255, 0), 3); 
-                std::string label = "Bottle: " + std::to_string(static_cast<int>(confidences[idx] * 100)) + "%";
+                
+                std::string label = color_name + " Bottle: " + std::to_string(conf_percentage) + "%";
                 cv::putText(frame, label, cv::Point(safe_box.x, safe_box.y - 10), 
                             cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
             }
         }
 
-        // 6. Publish Features
         if (!feature_msg.data.empty()) {
             feature_pub_->publish(feature_msg);
         }
@@ -524,16 +549,26 @@ private:
             bbox_pub_->publish(bbox_msg);
         }
 
-        // 7. Show live feed via OpenCV Window
+        if (!detected_colors.empty()) {
+            std_msgs::msg::String color_msg;
+            std::string colors_str = "";
+            for (size_t c = 0; c < detected_colors.size(); ++c) {
+                colors_str += detected_colors[c];
+                if (c < detected_colors.size() - 1) colors_str += ", ";
+            }
+            color_msg.data = colors_str;
+            color_pub_->publish(color_msg);
+        }
+
         cv::imshow("Live Bottle Detections", frame);
-        cv::waitKey(1); // Required to refresh the UI window
+        cv::waitKey(1); 
     }
 };
 
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<BottleDetectorLiveNode>();
-    rclcpp::spin(node); // This now loops continuously
+    rclcpp::spin(node); 
     rclcpp::shutdown();
     return 0;
 }
