@@ -219,8 +219,8 @@ private:
                 double real_y = 0.0;
 
                 if (intrinsics_received_ && depth_z > 0.0) {
-                    real_x = (center_x - cx_) * depth_z / fx_;
-                    real_y = (center_y - cy_) * depth_z / fy_;
+                    real_x = ((center_x - cx_) * depth_z) / fx_;
+                    real_y = ((center_y - cy_) * depth_z) / fy_;
                 } else if (!intrinsics_received_) {
                     RCLCPP_WARN(this->get_logger(), "Camera intrinsics not received yet. 3D coordinates will be 0.0.");
                 }
@@ -270,15 +270,13 @@ private:
             std_msgs::msg::String str_msg;
             str_msg.data = category;
             category_pub_->publish(str_msg);
-
+            
             std_msgs::msg::Int32 id_msg;
             id_msg.data = class_id;
             class_id_pub_->publish(id_msg);
 
-            sensor_msgs::msg::Image::SharedPtr out_img_msg = 
-                cv_bridge::CvImage(msg->header, "bgr8", display_img).toImageMsg();
+            sensor_msgs::msg::Image::SharedPtr out_img_msg = cv_bridge::CvImage(msg->header, "bgr8", display_img).toImageMsg();
             image_pub_->publish(*out_img_msg);
-
         }
         catch (cv_bridge::Exception& e)
         {
