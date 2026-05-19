@@ -6,6 +6,8 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <signal.h>
+#include <cstdlib>
 
 #include <thread>
 
@@ -112,15 +114,15 @@ private:
     QPushButton *home_btn_;
 
     // ---------------- EXIT ----------------
+
     void exit_all()
     {
-        rclcpp::shutdown();
+        system("pkill -SIGINT -f ros2");
         QApplication::quit();
     }
-
     // ---------------- BUTTON LOGIC ----------------
     void start_clicked()  { state_ = 1; publish(1); update_buttons(); }
-    void stop_clicked()   { state_ = 2; previous_state_ = state_; publish(2); update_buttons(); }
+    void stop_clicked()   { previous_state_ = state_; state_ = 2;  publish(2); update_buttons(); }
     void home_clicked()   { state_ = 0; publish(0); update_buttons(); }
     void resume_clicked() { state_ = previous_state_; publish(3); update_buttons(); } //FIX THIS to whatever it just was 
     void move2_clicked()   { state_ = 4; publish(6); update_buttons(); }
@@ -167,7 +169,6 @@ int main(int argc, char *argv[])
 
     int result = app.exec();
 
-    rclcpp::shutdown();
     ros_thread.join();
 
     return result;

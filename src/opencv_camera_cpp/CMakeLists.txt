@@ -32,6 +32,7 @@ ament_target_dependencies(camera_node
   sensor_msgs
   cv_bridge 
   OpenCV
+  
 )
 
 ament_target_dependencies(bottle_test_publisher
