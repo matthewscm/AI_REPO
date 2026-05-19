@@ -8,6 +8,7 @@
 
 #include <vector>
 #include <atomic>
+#include <chrono>   // <-- ADD THIS
 
 class CameraNode : public rclcpp::Node
 {
@@ -20,9 +21,6 @@ public:
             "bottle_class_id", 10,
             std::bind(&CameraNode::class_id_callback, this, std::placeholders::_1));
 
-        center_sub_ = this->create_subscription<geometry_msgs::msg::Point>(
-            "bottle_center", 10,
-            std::bind(&CameraNode::center_callback, this, std::placeholders::_1));
 
         bbox_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
             "bottle_bboxes", 10,
@@ -31,6 +29,9 @@ public:
         image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             "camera/camera/color/image_raw", 10,
             std::bind(&CameraNode::image_callback, this, std::placeholders::_1));
+
+        // Initialize timestamp
+        last_bbox_time_ = this->now();
     }
 
     ~CameraNode()
@@ -48,14 +49,12 @@ private:
         bottle_class_id_ = msg->data;
     }
 
-    void center_callback(const geometry_msgs::msg::Point::SharedPtr msg)
-    {
-        center_ = *msg;
-    }
-
     void bbox_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
     {
         bboxes_.clear();
+
+        // Update last received time
+        last_bbox_time_ = this->now();
 
         // format: [x, y, w, h, conf, x, y, w, h, conf, ...]
         for (size_t i = 0; i + 4 < msg->data.size(); i += 5)
@@ -111,6 +110,24 @@ private:
             return;
         }
 
+        // ───────────────── TIMEOUT CHECK ─────────────────
+
+        double seconds_since_bbox =
+            (this->now() - last_bbox_time_).seconds();
+
+        if (seconds_since_bbox > 10.0)
+        {
+            if (!bboxes_.empty())
+            {
+                RCLCPP_WARN(this->get_logger(),
+                            "No bounding boxes received for 5 seconds, navigating");
+
+                bboxes_.clear();
+            }
+
+            bottle_class_id_ = -1;
+        }
+
         display_text(frame, "Live Feed");
 
         // ── CLASS LABEL ──
@@ -131,21 +148,11 @@ private:
         }
         else
         {
-            label_text = "Processing";
+            label_text = "Navigating";
             circle_color = cv::Scalar(0, 255, 255);
         }
 
         display_text(frame, label_text, cv::Point(10, 30), 1.5, circle_color);
-
-        // ── CENTER POINT ──
-        if (bottle_class_id_ != -1)
-        {
-            cv::circle(frame,
-                       cv::Point((int)center_.x, (int)center_.y),
-                       10,
-                       circle_color,
-                       2);
-        }
 
         // ── BOUNDING BOXES ──
         for (const auto &box : bboxes_)
@@ -173,7 +180,6 @@ private:
 
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr class_id_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr center_sub_;
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr bbox_sub_;
 
     int bottle_class_id_ = -1;
@@ -183,6 +189,9 @@ private:
     cv::Scalar circle_color = cv::Scalar(0, 255, 255);
 
     std::vector<cv::Rect> bboxes_;
+
+    // ADD THIS
+    rclcpp::Time last_bbox_time_;
 
     std::atomic<bool> running_{true};
 };
@@ -203,11 +212,12 @@ int main(int argc, char **argv)
 // #include <sensor_msgs/msg/image.hpp>
 // #include <cv_bridge/cv_bridge.h>
 // #include <opencv2/opencv.hpp>
-// #include <std_msgs/msg/bool.hpp>
 // #include <std_msgs/msg/int32.hpp>
+// #include <std_msgs/msg/float32_multi_array.hpp>
 // #include <geometry_msgs/msg/point.hpp>
 
-// #include <atomic>  
+// #include <vector>
+// #include <atomic>
 
 // class CameraNode : public rclcpp::Node
 // {
@@ -218,24 +228,21 @@ int main(int argc, char **argv)
 
 //         class_id_sub_ = this->create_subscription<std_msgs::msg::Int32>(
 //             "bottle_class_id", 10,
-//             std::bind(&CameraNode::class_id_callback, this, std::placeholders::_1)
-//         );
+//             std::bind(&CameraNode::class_id_callback, this, std::placeholders::_1));
 
 //         center_sub_ = this->create_subscription<geometry_msgs::msg::Point>(
 //             "bottle_center", 10,
-//             std::bind(&CameraNode::center_callback, this, std::placeholders::_1)
-//         );
+//             std::bind(&CameraNode::center_callback, this, std::placeholders::_1));
+
+//         bbox_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+//             "bottle_bboxes", 10,
+//             std::bind(&CameraNode::bbox_callback, this, std::placeholders::_1));
 
 //         image_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
 //             "camera/camera/color/image_raw", 10,
-//             std::bind(&CameraNode::image_callback, this, std::placeholders::_1)
-//         );
-
-//        // cv::namedWindow("Live Camera Feed", cv::WINDOW_NORMAL);
-//         //cv::resizeWindow("Live Camera Feed", 576, 432);
+//             std::bind(&CameraNode::image_callback, this, std::placeholders::_1));
 //     }
 
-//     // Destructor to ensure clean shutdown
 //     ~CameraNode()
 //     {
 //         running_ = false;
@@ -244,7 +251,8 @@ int main(int argc, char **argv)
 
 // private:
 
-//     // ---------------- CALLBACKS ----------------
+//     // ───────────────────── CALLBACKS ─────────────────────
+
 //     void class_id_callback(const std_msgs::msg::Int32::SharedPtr msg)
 //     {
 //         bottle_class_id_ = msg->data;
@@ -255,7 +263,26 @@ int main(int argc, char **argv)
 //         center_ = *msg;
 //     }
 
-//     // ---------------- TEXT ----------------
+//     void bbox_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+//     {
+//         bboxes_.clear();
+
+//         // format: [x, y, w, h, conf, x, y, w, h, conf, ...]
+//         for (size_t i = 0; i + 4 < msg->data.size(); i += 5)
+//         {
+//             cv::Rect box(
+//                 (int)msg->data[i],
+//                 (int)msg->data[i + 1],
+//                 (int)msg->data[i + 2],
+//                 (int)msg->data[i + 3]
+//             );
+
+//             bboxes_.push_back(box);
+//         }
+//     }
+
+//     // ───────────────────── TEXT ─────────────────────
+
 //     void display_text(cv::Mat &frame,
 //                       const std::string &text,
 //                       const cv::Point &position = cv::Point(-1, -1),
@@ -278,11 +305,11 @@ int main(int argc, char **argv)
 //         cv::putText(frame, text, text_org, font_face, font_scale, colour, thickness);
 //     }
 
-//     // ---------------- IMAGE CALLBACK ----------------
+//     // ───────────────────── IMAGE CALLBACK ─────────────────────
+
 //     void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
 //     {
-//         if (!running_)
-//             return;
+//         if (!running_) return;
 
 //         cv::Mat frame;
 
@@ -296,26 +323,33 @@ int main(int argc, char **argv)
 
 //         display_text(frame, "Live Feed");
 
-//         if (bottle_class_id_ == 0) {
+//         // ── CLASS LABEL ──
+//         if (bottle_class_id_ == 0)
+//         {
 //             label_text = "Red";
 //             circle_color = cv::Scalar(0, 0, 255);
 //         }
-//         else if (bottle_class_id_ == 1) {
+//         else if (bottle_class_id_ == 1)
+//         {
 //             label_text = "Green";
 //             circle_color = cv::Scalar(0, 255, 0);
 //         }
-//         else if (bottle_class_id_ == 2) {
+//         else if (bottle_class_id_ == 2)
+//         {
 //             label_text = "Blue";
 //             circle_color = cv::Scalar(255, 0, 0);
 //         }
-//         else {
+//         else
+//         {
 //             label_text = "Processing";
 //             circle_color = cv::Scalar(0, 255, 255);
 //         }
 
 //         display_text(frame, label_text, cv::Point(10, 30), 1.5, circle_color);
 
-//         if (bottle_class_id_ != -1) {
+//         // ── CENTER POINT ──
+//         if (bottle_class_id_ != -1)
+//         {
 //             cv::circle(frame,
 //                        cv::Point((int)center_.x, (int)center_.y),
 //                        10,
@@ -323,15 +357,11 @@ int main(int argc, char **argv)
 //                        2);
 //         }
 
-//         // cv::imshow("Live Camera Feed", frame);
-
-//         // int key = cv::waitKey(1);
-//         // if (key == 27)
-//         // {
-//         //     RCLCPP_INFO(this->get_logger(), "ESC pressed - shutting down");
-//         //     shutdown_node();
-//         //     return;
-//         // }
+//         // ── BOUNDING BOXES ──
+//         for (const auto &box : bboxes_)
+//         {
+//             cv::rectangle(frame, box, circle_color, 2);
+//         }
 
 //         auto out_msg =
 //             cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();
@@ -339,7 +369,8 @@ int main(int argc, char **argv)
 //         pub_->publish(*out_msg);
 //     }
 
-//     // ---------------- SHUTDOWN ----------------
+//     // ───────────────────── SHUTDOWN ─────────────────────
+
 //     void shutdown_node()
 //     {
 //         running_ = false;
@@ -347,31 +378,34 @@ int main(int argc, char **argv)
 //     }
 
 // private:
+
 //     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_;
+
 //     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
 //     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr class_id_sub_;
 //     rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr center_sub_;
+//     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr bbox_sub_;
 
 //     int bottle_class_id_ = -1;
 //     geometry_msgs::msg::Point center_;
+
 //     std::string label_text = "No Bottle Detected/Unknown Bottle Type";
 //     cv::Scalar circle_color = cv::Scalar(0, 255, 255);
+
+//     std::vector<cv::Rect> bboxes_;
 
 //     std::atomic<bool> running_{true};
 // };
 
 
-// // ---------------- MAIN ----------------
+// // ───────────────────── MAIN ─────────────────────
+
 // int main(int argc, char **argv)
 // {
 //     rclcpp::init(argc, argv);
-
 //     auto node = std::make_shared<CameraNode>();
-
 //     rclcpp::spin(node);
-
 //     rclcpp::shutdown();
 //     cv::destroyAllWindows();
-
 //     return 0;
 // }

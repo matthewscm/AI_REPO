@@ -12,6 +12,7 @@
 #include <mutex>
 #include <iomanip>
 #include <sstream>
+#include <std_msgs/msg/float32_multi_array.hpp>
 
 class BottleClassifierNode : public rclcpp::Node
 {
@@ -50,6 +51,9 @@ public:
             "system_command", 10, 
             std::bind(&BottleClassifierNode::sys_callback, this, std::placeholders::_1));
 
+        bbox_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>(
+            "bottle_bboxes", 10);
+
         RCLCPP_INFO(this->get_logger(), "Bottle Classifier Started. Idling until '4' is received on 'system_command' topic.");
     }
 
@@ -64,6 +68,7 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr center_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr avg_center_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr bbox_pub_;
 
     cv::Mat latest_depth_img_;
     std::mutex depth_mutex_;
@@ -227,6 +232,22 @@ private:
 
                 // Drawing on image (still requires pixel coordinates)
                 cv::rectangle(display_img, best_bbox, box_color, 2);
+
+                // Publish bounding box
+                std_msgs::msg::Float32MultiArray bbox_msg;
+
+                // Format:
+                // [x, y, w, h, confidence]
+                bbox_msg.data = {
+                    static_cast<float>(best_bbox.x),
+                    static_cast<float>(best_bbox.y),
+                    static_cast<float>(best_bbox.width),
+                    static_cast<float>(best_bbox.height),
+                    1.0f
+                };
+
+                bbox_pub_->publish(bbox_msg);
+
                 cv::circle(display_img, cv::Point(center_x, center_y), 5, box_color, -1); 
                 
                 std::stringstream depth_ss;

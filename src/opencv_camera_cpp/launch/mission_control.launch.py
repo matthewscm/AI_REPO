@@ -17,7 +17,8 @@ def generate_launch_description():
     realsense_launch = os.path.join(
         get_package_share_directory('realsense2_camera'),
         'launch',
-        'rs_launch.py'
+        'rs_launch.py',
+        #'align_depth.enable:=true',
     )
 
     # -----------------------------------------------------
@@ -40,12 +41,17 @@ def generate_launch_description():
         # -------- Robot stack first --------
         ur_onrobot_launch,
 
-        # -------- Delay RealSense slightly --------
+ # -------- Delay RealSense slightly --------
         TimerAction(
             period=2.0,
             actions=[
                 IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(realsense_launch)
+                    PythonLaunchDescriptionSource(realsense_launch),
+                   launch_arguments={
+                        'align_depth.enable': 'true',
+                        'enable_depth': 'true',
+                        'enable_color': 'true',
+                    }.items()
                 ),
             ]
         ),
@@ -97,6 +103,19 @@ def generate_launch_description():
                     package='opencv_camera_cpp',
                     executable='mission_control_gui',
                     name='mission_control_gui',
+                    output='screen'
+                ),
+            ]
+        ),
+
+        #-------Bottle Detector node --------
+        TimerAction(
+            period=12.0,
+            actions=[
+                Node(
+                    package='bottle_detector',
+                    executable='detector_test_node',
+                    name='detector_test_node',
                     output='screen'
                 ),
             ]
