@@ -96,11 +96,14 @@ float evaluate_model(const cv::Ptr<cv::ml::SVM>& svm, const cv::Mat& data, const
 int main(int, char**) {
     try {
         std::string pkg_share = ament_index_cpp::get_package_share_directory("bottle_detector");
-        std::string csv_path = pkg_share + "/data/increased_recycling_dataset.csv";
+        std::string csv_path = pkg_share + "/data/data.csv";
 
         cv::Mat raw_data, raw_labels;
         std::cout << "Loading dataset..." << std::endl;
         load_dataset(csv_path, raw_data, raw_labels);
+        // Print dataset 
+        std::cout << "Dataset loaded: " << raw_data.rows << " samples, " << raw_data.cols << " features." << std::endl;
+        
 
         // 1. Shuffle
         std::vector<int> indices(raw_data.rows);
