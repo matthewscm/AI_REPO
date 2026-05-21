@@ -181,8 +181,8 @@ def launch_setup(context, *args, **kwargs):
                 actions=[
                     Node(
                         package='simulation_cpp',
-                        executable='bottle_spawner_node',
-                        name='bottle_grid_spawner',
+                        executable='bottle_spawn_node',
+                        name='single_bottle_spawner',
                         output='screen',
                     )
                 ]
