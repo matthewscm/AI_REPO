@@ -37,7 +37,15 @@ def generate_launch_description():
         output='screen'
     )
 
+    # bottle_picker_monitor = Node(
+    #     package='simulation_cpp',
+    #     executable='bottle_picker_monitor', # Update this to your actual executable name
+    #     name='bottle_picker_monitor',
+    #     output='screen'
+    # )
+
     return LaunchDescription([
         ur_onrobot_launch,
         static_environment_node,
+        # bottle_picker_monitor,
     ])

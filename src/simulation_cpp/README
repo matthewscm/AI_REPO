@@ -1,6 +1,5 @@
 # Running Code:
 
-
 # Navigate to workspace root
 cd ~/ros2_ws
 
@@ -17,18 +16,15 @@ ros2 launch simulation_cpp simulation_moveIt_UR3wGripper.launch.py
 ros2 launch simulation_cpp UR3wGripper_telemetry.launch.py
 
 # Load Scene Into Environment
-...
+ros2 run simulation_cpp static_environment_node
 
 # Run the bottle spawner node
 ros2 run simulation_cpp bottle_spawner_node
 
-
-ros2 run simulation_cpp static_environment_node
-
-
+# Run Bottle Spawner Node (Singular Bottle Based on Publishers)
 ros2 run simulation_cpp bottle_spawn_node
 
-
+# Commands to Test Bottle Spawn Node (Single Bottle Based on Publishers)
 ros2 topic pub -1 /bottle_class_id std_msgs/msg/Int32 "{data: 0}"
 
 ros2 topic pub -1 /bottle_center geometry_msgs/msg/Point "{x: 0.5, y: 0.0, z: 0.2}"
