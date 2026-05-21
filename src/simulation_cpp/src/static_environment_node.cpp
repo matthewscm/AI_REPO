@@ -14,8 +14,8 @@ class MultiMeshSpawner : public rclcpp::Node {
 public:
     MultiMeshSpawner() : Node("multi_mesh_spawner") {
         mesh_tasks_ = {
-            {"crate_recycle", "package://simulation_cpp/meshes/crate_recycle.STL", 0.3, 0.3, 0.0},
-            {"crate_discard", "package://simulation_cpp/meshes/crate_discard.STL", 0.3, -0.3, 0.0}
+            {"crate_recycle", "package://simulation_cpp/meshes/crate_recycle.STL", -0.3, 0.3, -0.3},
+            {"crate_discard", "package://simulation_cpp/meshes/crate_discard.STL", -0.4, -0.45, -0.3}
         };
 
         timer_ = this->create_wall_timer(

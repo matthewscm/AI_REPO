@@ -30,3 +30,9 @@ Thumbs.db
 *~
 *.bak
 *.backup
+src/realsense-ros/
+src/realsense-ros/
+librealsense/
+src/onrobot_description/
+src/onrobot_driver/
+src/ur_onrobot/

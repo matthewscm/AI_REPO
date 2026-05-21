@@ -61,9 +61,9 @@ private:
     {
         timer_->cancel();
 
-        int rows = 4, cols = 4;
+        int rows = 2, cols = 2;
         double spacing = 0.08;
-        double origin_x = -0.42, origin_y = -0.12;
+        double origin_x = 0.5597, origin_y = -0.1673;
 
         std::vector<moveit_msgs::msg::CollisionObject> collision_objects;
         std::vector<moveit_msgs::msg::ObjectColor> object_colors;
