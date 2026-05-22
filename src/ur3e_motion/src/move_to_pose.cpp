@@ -5,8 +5,13 @@
 #include <moveit_msgs/msg/planning_scene.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/point.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <thread>
 #include <vector>
 #include <cmath>
@@ -175,7 +180,6 @@ static moveit::core::RobotStatePtr getStateWithRetry(
 
 // ===========================================================================
 // INVERSE KINEMATICS
-// orientation is now passed explicitly so crate 2 uses ORI_PLACE_2
 // ===========================================================================
 static bool normaliseSolution(IKSolution & sol, const std::vector<double> & seed,
     const rclcpp::Logger & logger)
@@ -199,7 +203,7 @@ static bool normaliseSolution(IKSolution & sol, const std::vector<double> & seed
 
 static std::optional<std::pair<IKSolution, IKSolution>>
 solveIK(double tx, double ty, double tz, const std::string & side,
-        const Quaternion & ori,   // explicit orientation
+        const Quaternion & ori,
         moveit::planning_interface::MoveGroupInterface & arm, const rclcpp::Logger & logger)
 {
     auto state = getStateWithRetry(arm, logger);
@@ -211,7 +215,6 @@ solveIK(double tx, double ty, double tz, const std::string & side,
     std::vector<std::vector<double>> seeds;
     if (side == "place_crate2") {
         seeds = {
-            // Crate 2 seeds — physically captured
             { -2.4401, -1.6279,  2.0919, -3.5712, -1.3615,  0.0028 },
             { -2.4401, -1.6279, -2.0919, -3.5712, -1.3615,  0.0028 },
             { -2.5000, -1.7000,  2.2000, -3.6000, -1.3615,  0.0    },
@@ -221,7 +224,6 @@ solveIK(double tx, double ty, double tz, const std::string & side,
         };
     } else if (side == "place") {
         seeds = {
-            // Crate 1 seeds — (-0.3, +0.3)
             { -3.5748, -1.5544,  0.8426, -2.4283, -1.4928,  0.0 },
             { -3.9699, -1.5688, -0.8426, -2.4219, -1.4928,  0.0 },
             { -2.8000, -1.5500,  0.8000, -2.4000, -1.4928,  0.0 },
@@ -299,7 +301,6 @@ static std::optional<IKSolution> solveAndChoose(
     return chooseSolution(*sols, ref, last, logger);
 }
 
-// computeConfig selects orientation and seeds based on the destination crate
 static std::optional<ComputedConfig> computeConfig(
     const BottlePosition & b, const PlacePosition & p,
     moveit::planning_interface::MoveGroupInterface & arm, const rclcpp::Logger & logger)
@@ -315,12 +316,10 @@ static std::optional<ComputedConfig> computeConfig(
     ComputedConfig cfg;
     std::string last;
 
-    // pick side helper
     auto sp = [&](double x, double y, double z, const std::vector<double> & ref)
         -> std::optional<IKSolution> {
         return solveAndChoose(x, y, z, "pick", ORI_PICK, ref, last, arm, logger);
     };
-    // place side helper
     auto sl = [&](double x, double y, double z, const std::vector<double> & ref)
         -> std::optional<IKSolution> {
         return solveAndChoose(x, y, z, place_side, place_ori, ref, last, arm, logger);
@@ -547,6 +546,48 @@ int main(int argc, char * argv[]) {
             cmd_cv.notify_all();
         });
 
+    // -----------------------------------------------------------------------
+    // TF2 — camera_depth_optical_frame -> world
+    // -----------------------------------------------------------------------
+    auto tf_buffer   = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+    auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
+
+    std::mutex camera_point_mutex;
+    std::optional<BottlePosition> camera_bottle;
+    std::atomic<bool> new_camera_point{false};
+
+    auto camera_sub = node->create_subscription<geometry_msgs::msg::Point>(
+        "bottle_center_average", 10,
+        [&](const geometry_msgs::msg::Point::SharedPtr msg) {
+            // (0,0,0) is the clear signal — ignore
+            if (msg->x == 0.0 && msg->y == 0.0 && msg->z == 0.0) return;
+
+            geometry_msgs::msg::PointStamped point_in;
+            point_in.header.frame_id = "camera_depth_optical_frame";
+            point_in.header.stamp    = node->now();
+            point_in.point           = *msg;
+
+            try {
+                auto point_out = tf_buffer->transform(
+                    point_in, "world", tf2::durationFromSec(1.0));
+
+                std::lock_guard<std::mutex> lock(camera_point_mutex);
+                camera_bottle = BottlePosition{
+                    point_out.point.x,
+                    point_out.point.y,
+                    point_out.point.z,
+                    "camera_bottle_0",
+                    "red"  // default colour -> crate_1
+                };
+                new_camera_point.store(true);
+                RCLCPP_INFO(logger, "[camera] transformed to world: (%.3f, %.3f, %.3f)",
+                    point_out.point.x, point_out.point.y, point_out.point.z);
+            }
+            catch (const tf2::TransformException & ex) {
+                RCLCPP_WARN(logger, "[camera] TF transform failed: %s", ex.what());
+            }
+        });
+
     moveit::planning_interface::MoveGroupInterface arm(node, "ur_onrobot_manipulator");
     arm.setEndEffectorLink("gripper_tcp");
     arm.setPlanningTime(PLAN_TIME);
@@ -595,6 +636,9 @@ int main(int argc, char * argv[]) {
     std::string held_bottle;
     bool has_object = false;
 
+    // Saved bottle position from LOCATE command
+    std::optional<BottlePosition> saved_camera_bottle;
+
     auto emergencyRelease = [&](const std::string & bottle_id) {
         setGripper(gripper_pub, OPEN_WIDTH, logger, "emergency open");
         arm.detachObject(bottle_id);
@@ -609,7 +653,8 @@ int main(int argc, char * argv[]) {
             std::unique_lock<std::mutex> lock(cmd_mutex);
             cmd_cv.wait(lock, [&]() {
                 int c = current_cmd.load();
-                return c==CMD_START||c==CMD_HOME||c==CMD_RESUME||c==CMD_STOP||!rclcpp::ok();
+                return c==CMD_START||c==CMD_HOME||c==CMD_RESUME||c==CMD_STOP||
+                       c==CMD_LOCATE||!rclcpp::ok();
             });
         }
         int cmd_now = current_cmd.load();
@@ -620,10 +665,39 @@ int main(int argc, char * argv[]) {
             if (has_object) emergencyRelease(held_bottle);
             valid_jobs.clear(); job_index = 0;
             resume_step = MotionStep::PRE_PICK;
+            saved_camera_bottle.reset();
             current_cmd.store(CMD_NONE);
             rclcpp::sleep_for(std::chrono::milliseconds(200));
             executor.jointMove(HOME_JOINTS, "HOME");
             RCLCPP_INFO(logger, "=== Homed. Waiting... ===");
+            continue;
+        }
+
+        // ── LOCATE ────────────────────────────────────────────────────────
+        if (cmd_now == CMD_LOCATE) {
+            RCLCPP_INFO(logger, "=== LOCATE: listening for bottle position for 5 seconds ===");
+            current_cmd.store(CMD_NONE);
+            new_camera_point.store(false);
+
+            auto deadline = node->now() + rclcpp::Duration::from_seconds(5.0);
+            while (rclcpp::ok() && !new_camera_point.load()) {
+                if (node->now() > deadline) {
+                    RCLCPP_WARN(logger, "[LOCATE] No camera point received in 5 seconds.");
+                    break;
+                }
+                if (current_cmd == CMD_STOP || current_cmd == CMD_HOME) break;
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            if (new_camera_point.load()) {
+                std::lock_guard<std::mutex> lock(camera_point_mutex);
+                saved_camera_bottle = *camera_bottle;
+                new_camera_point.store(false);
+                RCLCPP_INFO(logger, "=== LOCATE: bottle saved at world (%.3f, %.3f, %.3f) ===",
+                    saved_camera_bottle->x,
+                    saved_camera_bottle->y,
+                    saved_camera_bottle->z);
+            }
             continue;
         }
 
@@ -669,23 +743,50 @@ int main(int argc, char * argv[]) {
 
         // ── MISSION ───────────────────────────────────────────────────────
         if (cmd_now == CMD_MISSION) {
-            RCLCPP_INFO(logger, "=== MISSION: beginning bottle discovery ===");
+            RCLCPP_INFO(logger, "=== MISSION: building job from bottle position ===");
             current_cmd.store(CMD_NONE);
+
+            BottlePosition cam_bottle;
+
+            // Use saved position from LOCATE if available
+            if (saved_camera_bottle.has_value()) {
+                cam_bottle = *saved_camera_bottle;
+                RCLCPP_INFO(logger,
+                    "=== MISSION: using saved LOCATE position (%.3f, %.3f, %.3f) ===",
+                    cam_bottle.x, cam_bottle.y, cam_bottle.z);
+                saved_camera_bottle.reset(); // clear after use
+            } else {
+                // Fall back to waiting for a fresh camera point (30s timeout)
+                RCLCPP_INFO(logger,
+                    "=== MISSION: no saved position, waiting for camera point (30s) ===");
+                new_camera_point.store(false);
+                auto deadline = node->now() + rclcpp::Duration::from_seconds(30.0);
+                while (rclcpp::ok() && !new_camera_point.load()) {
+                    if (node->now() > deadline) {
+                        RCLCPP_ERROR(logger, "Timeout waiting for camera bottle position.");
+                        break;
+                    }
+                    if (current_cmd == CMD_STOP || current_cmd == CMD_HOME) break;
+                    rclcpp::sleep_for(std::chrono::milliseconds(100));
+                }
+                if (!new_camera_point.load()) continue;
+                {
+                    std::lock_guard<std::mutex> lock(camera_point_mutex);
+                    cam_bottle = *camera_bottle;
+                    new_camera_point.store(false);
+                }
+            }
+
+            RCLCPP_INFO(logger,
+                "=== MISSION: bottle at world (%.3f, %.3f, %.3f) colour='%s' ===",
+                cam_bottle.x, cam_bottle.y, cam_bottle.z, cam_bottle.colour.c_str());
 
             auto known = psi.getKnownObjectNames();
             if (std::find(known.begin(), known.end(), "ground") == known.end())
                 addBox(psi, "ground", frame, 0.0, 0.0, -0.025, 2.0, 2.0, 0.05);
 
-            rclcpp::sleep_for(std::chrono::seconds(3));
-            auto bottles = discoverBottles(psi, logger);
-
-            std::sort(bottles.begin(), bottles.end(),
-                [](const BottlePosition & a, const BottlePosition & b) {
-                    return std::hypot(a.x, a.y) < std::hypot(b.x, b.y);
-                });
-
-            if (bottles.empty()) { RCLCPP_ERROR(logger, "No bottles found."); continue; }
-
+            // Build job list from camera bottle
+            std::vector<BottlePosition> bottles = {cam_bottle};
             auto [crate1_bottles, crate2_bottles] = sortBottlesByColour(bottles, logger);
             auto grid1 = buildPlaceGrid(crate1_bottles.size(), CRATE_1);
             auto grid2 = buildPlaceGrid(crate2_bottles.size(), CRATE_2);
@@ -699,19 +800,14 @@ int main(int argc, char * argv[]) {
             for (size_t i = 0; i < grid1.size(); i++) {
                 if (computeConfig(crate1_bottles[i], grid1[i], arm, logger))
                     valid_jobs.push_back({crate1_bottles[i], grid1[i]});
-                else {
-                    RCLCPP_WARN(logger, "IK failed '%s' -- skipping", crate1_bottles[i].id.c_str());
-                    removeObject(psi, scene_pub, crate1_bottles[i].id, frame, logger);
-                }
+                else
+                    RCLCPP_WARN(logger, "IK failed for camera bottle (crate1) -- skipping");
             }
-
             for (size_t i = 0; i < grid2.size(); i++) {
                 if (computeConfig(crate2_bottles[i], grid2[i], arm, logger))
                     valid_jobs.push_back({crate2_bottles[i], grid2[i]});
-                else {
-                    RCLCPP_WARN(logger, "IK failed '%s' -- skipping", crate2_bottles[i].id.c_str());
-                    removeObject(psi, scene_pub, crate2_bottles[i].id, frame, logger);
-                }
+                else
+                    RCLCPP_WARN(logger, "IK failed for camera bottle (crate2) -- skipping");
             }
 
             if (valid_jobs.empty()) { RCLCPP_ERROR(logger, "No valid jobs."); continue; }
@@ -840,7 +936,6 @@ int main(int argc, char * argv[]) {
             }
             if (interrupted()) break;
 
-            // LOWER
             // LOWER
             if (resume_step == MotionStep::LOWER) {
                 auto lower_target = arm.getCurrentPose().pose;
