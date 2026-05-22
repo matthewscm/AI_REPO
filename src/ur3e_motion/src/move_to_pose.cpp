@@ -559,7 +559,6 @@ int main(int argc, char * argv[]) {
     auto camera_sub = node->create_subscription<geometry_msgs::msg::Point>(
         "bottle_center_average", 10,
         [&](const geometry_msgs::msg::Point::SharedPtr msg) {
-            // (0,0,0) is the clear signal — ignore
             if (msg->x == 0.0 && msg->y == 0.0 && msg->z == 0.0) return;
 
             geometry_msgs::msg::PointStamped point_in;
@@ -577,10 +576,12 @@ int main(int argc, char * argv[]) {
                     point_out.point.y,
                     point_out.point.z,
                     "camera_bottle_0",
-                    "red"  // default colour -> crate_1
+                    "red"
                 };
                 new_camera_point.store(true);
-                RCLCPP_INFO(logger, "[camera] transformed to world: (%.3f, %.3f, %.3f)",
+                // Also immediately save to saved_camera_bottle
+                saved_camera_bottle = *camera_bottle;
+                RCLCPP_INFO(logger, "[camera] point saved at world: (%.3f, %.3f, %.3f)",
                     point_out.point.x, point_out.point.y, point_out.point.z);
             }
             catch (const tf2::TransformException & ex) {
@@ -673,30 +674,34 @@ int main(int argc, char * argv[]) {
             continue;
         }
 
-        // ── LOCATE ────────────────────────────────────────────────────────
+        // ── LOCATE ────────────────────────────────────────────────────────────
         if (cmd_now == CMD_LOCATE) {
-            RCLCPP_INFO(logger, "=== LOCATE: listening for bottle position for 5 seconds ===");
             current_cmd.store(CMD_NONE);
-            new_camera_point.store(false);
-
-            auto deadline = node->now() + rclcpp::Duration::from_seconds(5.0);
-            while (rclcpp::ok() && !new_camera_point.load()) {
-                if (node->now() > deadline) {
-                    RCLCPP_WARN(logger, "[LOCATE] No camera point received in 5 seconds.");
-                    break;
-                }
-                if (current_cmd == CMD_STOP || current_cmd == CMD_HOME) break;
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-            }
-
-            if (new_camera_point.load()) {
-                std::lock_guard<std::mutex> lock(camera_point_mutex);
-                saved_camera_bottle = *camera_bottle;
-                new_camera_point.store(false);
-                RCLCPP_INFO(logger, "=== LOCATE: bottle saved at world (%.3f, %.3f, %.3f) ===",
+            if (saved_camera_bottle.has_value()) {
+                RCLCPP_INFO(logger, "=== LOCATE: bottle already saved at world (%.3f, %.3f, %.3f) ===",
                     saved_camera_bottle->x,
                     saved_camera_bottle->y,
                     saved_camera_bottle->z);
+            } else {
+                RCLCPP_INFO(logger, "=== LOCATE: no point yet, listening for 5 seconds ===");
+                auto deadline = node->now() + rclcpp::Duration::from_seconds(5.0);
+                while (rclcpp::ok() && !new_camera_point.load()) {
+                    if (node->now() > deadline) {
+                        RCLCPP_WARN(logger, "[LOCATE] No camera point received in 5 seconds.");
+                        break;
+                    }
+                    if (current_cmd == CMD_STOP || current_cmd == CMD_HOME) break;
+                    rclcpp::sleep_for(std::chrono::milliseconds(100));
+                }
+                if (new_camera_point.load()) {
+                    std::lock_guard<std::mutex> lock(camera_point_mutex);
+                    saved_camera_bottle = *camera_bottle;
+                    new_camera_point.store(false);
+                    RCLCPP_INFO(logger, "=== LOCATE: bottle saved at world (%.3f, %.3f, %.3f) ===",
+                        saved_camera_bottle->x,
+                        saved_camera_bottle->y,
+                        saved_camera_bottle->z);
+                }
             }
             continue;
         }
