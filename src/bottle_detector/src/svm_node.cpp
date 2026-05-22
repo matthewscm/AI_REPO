@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/ml.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
+#include "std_msgs/msg/bool.hpp" // Added Boolean message header
 
 class BottleClassifierNode : public rclcpp::Node {
 public:
@@ -41,6 +42,9 @@ public:
 
         // Publishes the classification result (1 for recyclable, 0 for not)
         result_pub_ = this->create_publisher<std_msgs::msg::Int32>("classification_result", 10);
+
+        // New Boolean publisher
+        recyclable_pub_ = this->create_publisher<std_msgs::msg::Bool>("is_recyclable", 10);
     }
 
 private:
@@ -62,16 +66,23 @@ private:
         // 6. Predict
         float prediction = svm_->predict(scaled_input);
 
-        // 7. Publish result
+        // 7. Publish results
+        int prediction_int = static_cast<int>(prediction);
+
         auto result_msg = std_msgs::msg::Int32();
-        result_msg.data = static_cast<int>(prediction);
+        result_msg.data = prediction_int;
         result_pub_->publish(result_msg);
 
-        RCLCPP_INFO(this->get_logger(), "Prediction: %s", (result_msg.data == 1 ? "Recyclable" : "Non-Recyclable"));
+        auto bool_msg = std_msgs::msg::Bool();
+        bool_msg.data = (prediction_int == 1);
+        recyclable_pub_->publish(bool_msg);
+
+        RCLCPP_INFO(this->get_logger(), "Prediction: %s", (bool_msg.data ? "Recyclable" : "Non-Recyclable"));
     }
 
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr feature_sub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr result_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr recyclable_pub_; // New Publisher member
     
     cv::Ptr<cv::ml::SVM> svm_;
     cv::Mat mean_;
