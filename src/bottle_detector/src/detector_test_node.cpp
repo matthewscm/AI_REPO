@@ -362,7 +362,7 @@ public:
 
         bbox_pub_      = this->create_publisher<std_msgs::msg::Float32MultiArray>("bottle_bboxes", 10);
         color_pub_     = this->create_publisher<std_msgs::msg::String>("bottle_colors", 10);
-        color_int_pub_ = this->create_publisher<std_msgs::msg::Int32>("bottle_color_int", 10); // NEW Integer publisher
+        class_id_pub_ = this->create_publisher<std_msgs::msg::Int32>("bottle_class_id", 10); // NEW Integer publisher
         feature_pub_   = this->create_publisher<std_msgs::msg::Float32MultiArray>("bottle_features", 10);
 
         sys_sub_ = this->create_subscription<std_msgs::msg::Int32>(
@@ -395,7 +395,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr feature_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr bbox_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr color_pub_;
-    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr color_int_pub_; // NEW Integer Publisher declaration
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr class_id_pub_; // NEW Integer Publisher declaration
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sys_sub_;
 
@@ -519,7 +519,7 @@ private:
                 // Publish the Integer Message
                 std_msgs::msg::Int32 color_int_msg;
                 color_int_msg.data = color_int_code;
-                color_int_pub_->publish(color_int_msg);
+                class_id_pub_->publish(color_int_msg);
 
                 // Terminal Logging
                 RCLCPP_INFO(this->get_logger(), "Detected %s Bottle (Confidence: %d%%) -> Int Code: %d", color_name.c_str(), conf_percentage, color_int_code);

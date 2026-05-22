@@ -555,6 +555,7 @@ int main(int argc, char * argv[]) {
     std::mutex camera_point_mutex;
     std::optional<BottlePosition> camera_bottle;
     std::atomic<bool> new_camera_point{false};
+    std::optional<BottlePosition> saved_camera_bottle;
 
     auto camera_sub = node->create_subscription<geometry_msgs::msg::Point>(
         "bottle_center_average", 10,
@@ -582,7 +583,7 @@ int main(int argc, char * argv[]) {
                 // Also immediately save to saved_camera_bottle
                 saved_camera_bottle = *camera_bottle;
                 RCLCPP_INFO(logger, "[camera] point saved at world: (%.3f, %.3f, %.3f)",
-                    point_out.point.x, point_out.point.y, point_out.point.z);
+                    camera_bottle->x, camera_bottle->y, camera_bottle->z);
             }
             catch (const tf2::TransformException & ex) {
                 RCLCPP_WARN(logger, "[camera] TF transform failed: %s", ex.what());
@@ -636,9 +637,6 @@ int main(int argc, char * argv[]) {
     MotionStep resume_step = MotionStep::PRE_PICK;
     std::string held_bottle;
     bool has_object = false;
-
-    // Saved bottle position from LOCATE command
-    std::optional<BottlePosition> saved_camera_bottle;
 
     auto emergencyRelease = [&](const std::string & bottle_id) {
         setGripper(gripper_pub, OPEN_WIDTH, logger, "emergency open");

@@ -32,7 +32,7 @@ def generate_launch_description():
             'ur_type': 'ur3e',
             'onrobot_type': 'rg2',
             'launch_rviz': 'true', 
-            'robot_ip': '192.168.0.194',
+            'robot_ip': '192.168.0.191',
         }.items()
     )
 
