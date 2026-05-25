@@ -143,7 +143,7 @@ int main(int, char**) {
         svm->setType(cv::ml::SVM::C_SVC);
         svm->setKernel(cv::ml::SVM::RBF);
         svm->setGamma(0.1);
-        svm->setC(0.185);
+        svm->setC(0.25);
         svm->train(train_scaled, cv::ml::ROW_SAMPLE, train_labels);
 
         // cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
