@@ -32,7 +32,7 @@ def generate_launch_description():
             'ur_type': 'ur3e',
             'onrobot_type': 'rg2',
             'launch_rviz': 'true', 
-            'robot_ip': '192.168.0.191',
+            'robot_ip': '192.168.0.197',
         }.items()
     )
 
@@ -120,4 +120,18 @@ def generate_launch_description():
                 ),
             ]
         ),
+
+        #-------- SVM Classifier node --------
+        TimerAction(
+            period=14.0,
+            actions=[
+                Node(
+                    package='bottle_detector',
+                    executable='svm_node',
+                    name='svm_node',
+                    output='screen'
+                ),
+             ]
+        ),
+        
     ])

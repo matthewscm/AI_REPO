@@ -45,7 +45,7 @@ public:
             "bottle_class_id", 10, std::bind(&BottleCameraSpawner::class_id_callback, this, std::placeholders::_1));
 
         center_sub_ = this->create_subscription<geometry_msgs::msg::Point>(
-            "bottle_center", 10, std::bind(&BottleCameraSpawner::center_callback, this, std::placeholders::_1));
+            "bottle_center_world", 10, std::bind(&BottleCameraSpawner::center_callback, this, std::placeholders::_1));
             
         RCLCPP_INFO(this->get_logger(), "Bottle Spawner Started: Monitoring Red(0), Green(1), and Blue(2)");
     }

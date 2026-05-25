@@ -266,10 +266,12 @@ private:
                 center_pub_->publish(center_msg);
 
                 // Accumulate meter readings for average
-                sum_x_ += real_x;
-                sum_y_ += real_y;
-                sum_z_ += depth_z;
-                readings_count_++;
+                if(depth_z != 0.0 && real_x != 0.0 && real_y != 0.0) {
+                    sum_x_ += real_x;
+                    sum_y_ += real_y;
+                    sum_z_ += depth_z;
+                    readings_count_++;
+                }
 
                 RCLCPP_INFO(this->get_logger(),
                             "Detected [%d/10]: [%s] | Pixel: (%d, %d) | 3D: (%.3f, %.3f, %.3fm)", 

@@ -401,13 +401,13 @@ private:
 
     bool idle_ = true;
     rclcpp::Time start_time_;
-    rclcpp::Duration run_duration_ = rclcpp::Duration::from_seconds(20.0);
+    rclcpp::Duration run_duration_ = rclcpp::Duration::from_seconds(5.0);
 
     void sys_callback(const std_msgs::msg::Int32::SharedPtr msg)
     {
         if (msg->data == 5 && idle_) {
             RCLCPP_INFO(this->get_logger(),
-                "Received command 5 → starting YOLO detection for 20s");
+                "Received command 5 → starting YOLO detection for 5s");
 
             idle_ = false;
             start_time_ = this->now();

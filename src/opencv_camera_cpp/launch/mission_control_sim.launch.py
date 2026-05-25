@@ -33,6 +33,7 @@ def generate_launch_description():
             'onrobot_type': 'rg2',
             'launch_rviz': 'true', 
             'robot_ip': '192.168.0.191',
+            'fake_hardware': 'true',
         }.items()
     )
 
@@ -121,18 +122,32 @@ def generate_launch_description():
             ]
         ),
 
-        # # # -----------------------------------------------------------------------
-        # # # 5. Bottle spawner  (SIM ONLY)
-        # # # -----------------------------------------------------------------------
-        # TimerAction(
-        #     period=5.0,
-        #     actions=[
-        #         Node(
-        #             package='simulation_cpp',
-        #             executable='bottle_spawn_node',
-        #             name='single_bottle_spawner',
-        #             output='screen',
-        #         ),
-        #     ]
-        # ),
+        # # -----------------------------------------------------------------------
+        # # 5. Bottle spawner  (SIM ONLY)
+        # # -----------------------------------------------------------------------
+        TimerAction(
+            period=5.0,
+            actions=[
+                Node(
+                    package='simulation_cpp',
+                    executable='bottle_spawn_node',
+                    name='single_bottle_spawner',
+                    output='screen',
+                ),
+            ]
+        ),
+
+       #-------- SVM Classifier node --------
+        TimerAction(
+            period=14.0,
+            actions=[
+                Node(
+                    package='bottle_detector',
+                    executable='svm_node',
+                    name='svm_node',
+                    output='screen'
+                ),
+             ]
+        ),
+
     ])

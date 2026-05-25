@@ -551,6 +551,8 @@ int main(int argc, char * argv[]) {
     // -----------------------------------------------------------------------
     auto tf_buffer   = std::make_shared<tf2_ros::Buffer>(node->get_clock());
     auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
+    auto world_bottle_pub = node->create_publisher<geometry_msgs::msg::PointStamped>(
+    "bottle_center_world", 10);
 
     std::mutex camera_point_mutex;
     std::optional<BottlePosition> camera_bottle;
@@ -566,6 +568,7 @@ int main(int argc, char * argv[]) {
             point_in.header.frame_id = "camera_depth_optical_frame";
             point_in.header.stamp    = node->now();
             point_in.point           = *msg;
+            world_bottle_pub->publish(point_in);
 
             try {
                 auto point_out = tf_buffer->transform(
