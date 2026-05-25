@@ -32,6 +32,7 @@ ros2 topic pub -1 /bottle_features std_msgs/msg/Float32MultiArray "{data: [154.0
 # ---------------------------------------------------------------------------------
 # Checking is_recyclable publisher/topic
 # ---------------------------------------------------------------------------------
+
 ros2 topic echo /is_recyclable
 # data: true (Recyclable)
 # data: false (Non-Recyclable)

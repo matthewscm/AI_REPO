@@ -63,6 +63,13 @@ private:
             scaled_input.at<float>(0, i) = (input_row.at<float>(0, i) - mean_.at<float>(0, i)) / stddev_.at<float>(0, i);
         }
 
+        RCLCPP_INFO(this->get_logger(), 
+        "RAW: [%.1f, %.1f, %.1f, %.1f, %.1f] | SCALED: [%.2f, %.2f, %.2f, %.2f, %.2f]",
+        input_row.at<float>(0,0), input_row.at<float>(0,1), input_row.at<float>(0,2), 
+        input_row.at<float>(0,3), input_row.at<float>(0,4),
+        scaled_input.at<float>(0,0), scaled_input.at<float>(0,1), scaled_input.at<float>(0,2), 
+        scaled_input.at<float>(0,3), scaled_input.at<float>(0,4));
+
         // 6. Predict
         float prediction = svm_->predict(scaled_input);
 

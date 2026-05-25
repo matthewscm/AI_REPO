@@ -143,8 +143,28 @@ int main(int, char**) {
         svm->setType(cv::ml::SVM::C_SVC);
         svm->setKernel(cv::ml::SVM::RBF);
         svm->setGamma(0.1);
-        svm->setC(10.0);
+        svm->setC(0.185);
         svm->train(train_scaled, cv::ml::ROW_SAMPLE, train_labels);
+
+        // cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
+        // svm->setType(cv::ml::SVM::C_SVC);
+        // svm->setKernel(cv::ml::SVM::RBF);
+
+        // // Create the TrainData object required by trainAuto
+        // cv::Ptr<cv::ml::TrainData> trainData = cv::ml::TrainData::create(
+        //     train_scaled, 
+        //     cv::ml::ROW_SAMPLE, 
+        //     train_labels
+        // );
+
+        // std::cout << "Starting automatic grid search for best C and Gamma..." << std::endl;
+
+        // // This replaces svm->setGamma, svm->setC, and svm->train()
+        // svm->trainAuto(trainData); 
+
+        // Output the values it found so you can see how they compare to your old ones
+        std::cout << "Optimized C: " << svm->getC() << std::endl;
+        std::cout << "Optimized Gamma: " << svm->getGamma() << std::endl;
 
         // 5. Accuracy
         std::cout << "Train Accuracy: " << evaluate_model(svm, train_scaled, train_labels) << "%" << std::endl;
