@@ -530,63 +530,57 @@ int main(int argc, char * argv[]) {
     // -----------------------------------------------------------------------
     // TF2 — camera_depth_optical_frame -> world
     // -----------------------------------------------------------------------
-    auto tf_buffer   = std::make_shared<tf2_ros::Buffer>(node->get_clock());
-    auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
+auto tf_buffer   = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
 
-    //ADDED
-    auto world_bottle_pub = node->create_publisher<geometry_msgs::msg::PointStamped>(
-        "bottle_center_world", 10);
+auto world_bottle_pub = node->create_publisher<geometry_msgs::msg::Point>(
+    "bottle_center_world", 10);
+std::mutex camera_point_mutex;
+std::optional<BottlePosition> camera_bottle;
+std::atomic<bool> new_camera_point{false};
+std::optional<BottlePosition> saved_camera_bottle;
 
-    std::mutex camera_point_mutex;
-    std::optional<BottlePosition> camera_bottle;
-    std::atomic<bool> new_camera_point{false};
-    std::optional<BottlePosition> saved_camera_bottle;
+auto camera_sub = node->create_subscription<geometry_msgs::msg::Point>(
+    "bottle_center_average", 10,
+    [&](const geometry_msgs::msg::Point::SharedPtr msg) {
+        if (msg->x == 0.0 && msg->y == 0.0 && msg->z == 0.0) return;
+        geometry_msgs::msg::PointStamped point_in;
+        point_in.header.frame_id = "camera_depth_optical_frame";
+        point_in.header.stamp    = node->now();
+        point_in.point           = *msg;
+        try {
+            auto point_out = tf_buffer->transform(
+                point_in, "world", tf2::durationFromSec(1.0));
 
-    auto camera_sub = node->create_subscription<geometry_msgs::msg::Point>(
-        "bottle_center_average", 10,
-        [&](const geometry_msgs::msg::Point::SharedPtr msg) {
-            if (msg->x == 0.0 && msg->y == 0.0 && msg->z == 0.0) return;
+            world_bottle_pub->publish(point_out.point);  // point extracts the Point
 
-            geometry_msgs::msg::PointStamped point_in;
-            point_in.header.frame_id = "camera_depth_optical_frame";
-            point_in.header.stamp    = node->now();
-            point_in.point           = *msg;
-            //ADDED 
-            world_bottle_pub->publish(point_in);
-
-            try {
-                auto point_out = tf_buffer->transform(
-                    point_in, "world", tf2::durationFromSec(1.0));
-
-                std::lock_guard<std::mutex> lock(camera_point_mutex);
-                camera_bottle = BottlePosition{
-                    point_out.point.x,
-                    point_out.point.y,
-                    point_out.point.z,
-                    "camera_bottle_0",
-                    ""
-                };
-                new_camera_point.store(true);
-                saved_camera_bottle = *camera_bottle;
-                RCLCPP_INFO(logger, "[camera] point saved at world: (%.3f, %.3f, %.3f)",
-                    camera_bottle->x, camera_bottle->y, camera_bottle->z);
-            }
-            catch (const tf2::TransformException &) {
-                // TF frame unavailable (e.g. simulator without camera).
-                // Treat the incoming coordinates as already in world frame.
-                std::lock_guard<std::mutex> lock(camera_point_mutex);
-                camera_bottle = BottlePosition{
-                    msg->x, msg->y, msg->z,
-                    "camera_bottle_0",
-                    ""
-                };
-                new_camera_point.store(true);
-                saved_camera_bottle = *camera_bottle;
-                RCLCPP_INFO(logger,
-                    "[camera] TF unavailable — using raw coords as world: (%.3f, %.3f, %.3f)",
-                    msg->x, msg->y, msg->z);
-            }
-        });
+            std::lock_guard<std::mutex> lock(camera_point_mutex);
+            camera_bottle = BottlePosition{
+                point_out.point.x,
+                point_out.point.y,
+                point_out.point.z,
+                "camera_bottle_0",
+                ""
+            };
+            new_camera_point.store(true);
+            saved_camera_bottle = *camera_bottle;
+            RCLCPP_INFO(logger, "[camera] point saved at world: (%.3f, %.3f, %.3f)",
+                camera_bottle->x, camera_bottle->y, camera_bottle->z);
+        }
+        catch (const tf2::TransformException &) {
+            std::lock_guard<std::mutex> lock(camera_point_mutex);
+            camera_bottle = BottlePosition{
+                msg->x, msg->y, msg->z,
+                "camera_bottle_0",
+                ""
+            };
+            new_camera_point.store(true);
+            saved_camera_bottle = *camera_bottle;
+            RCLCPP_INFO(logger,
+                "[camera] TF unavailable — using raw coords as world: (%.3f, %.3f, %.3f)",
+                msg->x, msg->y, msg->z);
+        }
+    });
 
     // -----------------------------------------------------------------------
     // DEBUG: direct world-frame bottle injection (simulator / bench testing).
@@ -626,8 +620,8 @@ int main(int argc, char * argv[]) {
         [&](const std_msgs::msg::Bool::SharedPtr msg) {
             std::lock_guard<std::mutex> lock(recyclable_mutex);
             latest_recyclable = msg->data;
-            RCLCPP_INFO(node->get_logger(), "[recyclable] received: %s",
-                msg->data ? "RECYCLABLE" : "NON-RECYCLABLE");
+            // RCLCPP_INFO(node->get_logger(), "[recyclable] received: %s",
+            //     msg->data ? "RECYCLABLE" : "NON-RECYCLABLE");
         });
 
     moveit::planning_interface::MoveGroupInterface arm(node, "ur_onrobot_manipulator");
