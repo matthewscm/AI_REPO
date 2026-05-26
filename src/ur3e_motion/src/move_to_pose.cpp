@@ -9,6 +9,7 @@
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/bool.hpp>           // ← NEW: for is_recyclable
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -63,8 +64,9 @@ struct CrateConfig {
     std::string label;
 };
 
-const CrateConfig CRATE_1 = { -0.3,  0.3, 0.34, "crate_1" };
-const CrateConfig CRATE_2 = { -0.4, -0.45, 0.34, "crate_2" };
+// CRATE_1 = recyclable, CRATE_2 = non-recyclable
+const CrateConfig CRATE_1 = { -0.3,  0.3,  0.34, "crate_1" };  // recyclable
+const CrateConfig CRATE_2 = { -0.4, -0.45, 0.34, "crate_2" };  // non-recyclable
 
 // ===========================================================================
 // FIXED ORIENTATIONS & JOINT POSITIONS
@@ -93,6 +95,8 @@ struct IKSolution {
     std::string name;
 };
 
+// NOTE: 'colour' field kept for structural compatibility but no longer used for sorting.
+// Sorting is now driven by the 'recyclable' boolean saved from is_recyclable topic.
 struct BottlePosition { double x, y, z; std::string id; std::string colour; };
 struct PlacePosition  { double x, y, z; std::string id; std::string crate; };
 
@@ -114,31 +118,25 @@ static std::string stepName(MotionStep s) {
 }
 
 // ===========================================================================
-// COLOUR HELPERS
+// RECYCLABILITY SORTING  (replaces sortBottlesByColour)
 // ===========================================================================
-static std::string extractColour(const std::string & id)
-{
-    auto pos = id.rfind('_');
-    if (pos == std::string::npos || pos + 1 >= id.size()) return "";
-    return id.substr(pos + 1);
-}
-
+// Returns {recyclable_bottles, non_recyclable_bottles}.
+// CRATE_1 receives recyclable bottles; CRATE_2 receives non-recyclable bottles.
 static std::pair<std::vector<BottlePosition>, std::vector<BottlePosition>>
-sortBottlesByColour(const std::vector<BottlePosition> & bottles, const rclcpp::Logger & logger)
+sortBottlesByRecyclability(const std::vector<BottlePosition> & bottles,
+                           bool is_recyclable,
+                           const rclcpp::Logger & logger)
 {
-    std::vector<BottlePosition> crate1, crate2;
-    std::string primary_colour;
+    std::vector<BottlePosition> crate1, crate2;   // crate1=recyclable, crate2=non-recyclable
     for (const auto & b : bottles) {
-        if (primary_colour.empty()) {
-            primary_colour = b.colour;
-            RCLCPP_INFO(logger, "[sort] Primary colour: '%s' -> %s", primary_colour.c_str(), CRATE_1.label.c_str());
-        }
-        if (b.colour == primary_colour) {
+        if (is_recyclable) {
             crate1.push_back(b);
-            RCLCPP_INFO(logger, "[sort] '%s' (%s) -> %s", b.id.c_str(), b.colour.c_str(), CRATE_1.label.c_str());
+            RCLCPP_INFO(logger, "[sort] '%s' is RECYCLABLE -> %s",
+                b.id.c_str(), CRATE_1.label.c_str());
         } else {
             crate2.push_back(b);
-            RCLCPP_INFO(logger, "[sort] '%s' (%s) -> %s", b.id.c_str(), b.colour.c_str(), CRATE_2.label.c_str());
+            RCLCPP_INFO(logger, "[sort] '%s' is NON-RECYCLABLE -> %s",
+                b.id.c_str(), CRATE_2.label.c_str());
         }
     }
     return {crate1, crate2};
@@ -397,28 +395,6 @@ static void removeObject(moveit::planning_interface::PlanningSceneInterface & ps
     RCLCPP_INFO(logger, "[scene] removed '%s'", id.c_str());
 }
 
-static std::vector<BottlePosition> discoverBottles(
-    moveit::planning_interface::PlanningSceneInterface & psi, const rclcpp::Logger & logger)
-{
-    std::vector<BottlePosition> bottles;
-    auto known = psi.getKnownObjectNames();
-    auto poses = psi.getObjectPoses(known);
-    for (const auto & id : known) {
-        if (id.rfind("bottle_", 0) != 0 || poses.find(id) == poses.end()) continue;
-        const auto & pose = poses.at(id);
-        std::string colour = extractColour(id);
-        bottles.push_back({pose.position.x, pose.position.y,
-                           pose.position.z + BODY_HEIGHT, id, colour});
-        RCLCPP_INFO(logger, "[discovery] '%s' colour='%s' at (%.3f,%.3f) z=%.3f",
-            id.c_str(), colour.c_str(),
-            pose.position.x, pose.position.y, pose.position.z + BODY_HEIGHT);
-    }
-    std::sort(bottles.begin(), bottles.end(),
-        [](const BottlePosition & a, const BottlePosition & b) { return a.id < b.id; });
-    RCLCPP_INFO(logger, "[discovery] %zu bottles total", bottles.size());
-    return bottles;
-}
-
 static std::vector<PlacePosition> buildPlaceGrid(std::size_t count, const CrateConfig & crate)
 {
     constexpr double spacing = 0.06;
@@ -539,6 +515,11 @@ int main(int argc, char * argv[]) {
     std::mutex cmd_mutex;
     std::condition_variable cmd_cv;
 
+    // Ctrl+C (SIGINT) sets rclcpp::ok() to false and fires this callback,
+    // which wakes any thread sleeping inside cmd_cv.wait() so the main loop
+    // can see !rclcpp::ok() and exit cleanly.
+    rclcpp::on_shutdown([&]() { cmd_cv.notify_all(); });
+
     auto cmd_sub = node->create_subscription<std_msgs::msg::Int32>("system_command", 10,
         [&](const std_msgs::msg::Int32::SharedPtr msg) {
             RCLCPP_INFO(logger, "[GUI] cmd=%d", msg->data);
@@ -552,7 +533,7 @@ int main(int argc, char * argv[]) {
     auto tf_buffer   = std::make_shared<tf2_ros::Buffer>(node->get_clock());
     auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
     auto world_bottle_pub = node->create_publisher<geometry_msgs::msg::PointStamped>(
-    "bottle_center_world", 10);
+        "bottle_center_world", 10);
 
     std::mutex camera_point_mutex;
     std::optional<BottlePosition> camera_bottle;
@@ -580,17 +561,70 @@ int main(int argc, char * argv[]) {
                     point_out.point.y,
                     point_out.point.z,
                     "camera_bottle_0",
-                    "red"
+                    ""
                 };
                 new_camera_point.store(true);
-                // Also immediately save to saved_camera_bottle
                 saved_camera_bottle = *camera_bottle;
                 RCLCPP_INFO(logger, "[camera] point saved at world: (%.3f, %.3f, %.3f)",
                     camera_bottle->x, camera_bottle->y, camera_bottle->z);
             }
-            catch (const tf2::TransformException & ex) {
-                RCLCPP_WARN(logger, "[camera] TF transform failed: %s", ex.what());
+            catch (const tf2::TransformException &) {
+                // TF frame unavailable (e.g. simulator without camera).
+                // Treat the incoming coordinates as already in world frame.
+                std::lock_guard<std::mutex> lock(camera_point_mutex);
+                camera_bottle = BottlePosition{
+                    msg->x, msg->y, msg->z,
+                    "camera_bottle_0",
+                    ""
+                };
+                new_camera_point.store(true);
+                saved_camera_bottle = *camera_bottle;
+                RCLCPP_INFO(logger,
+                    "[camera] TF unavailable — using raw coords as world: (%.3f, %.3f, %.3f)",
+                    msg->x, msg->y, msg->z);
             }
+        });
+
+    // -----------------------------------------------------------------------
+    // DEBUG: direct world-frame bottle injection (simulator / bench testing).
+    // Publish to /debug_bottle_position to bypass the camera pipeline entirely.
+    //   ros2 topic pub --once /debug_bottle_position geometry_msgs/msg/Point \
+    //     "{x: 0.35, y: 0.10, z: 0.36}"
+    // -----------------------------------------------------------------------
+    auto debug_bottle_sub = node->create_subscription<geometry_msgs::msg::Point>(
+        "debug_bottle_position", 10,
+        [&](const geometry_msgs::msg::Point::SharedPtr msg) {
+            if (msg->x == 0.0 && msg->y == 0.0 && msg->z == 0.0) return;
+            std::lock_guard<std::mutex> lock(camera_point_mutex);
+            camera_bottle = BottlePosition{
+                msg->x, msg->y, msg->z,
+                "camera_bottle_0",
+                ""
+            };
+            new_camera_point.store(true);
+            saved_camera_bottle = *camera_bottle;
+            RCLCPP_INFO(logger,
+                "[debug] bottle position injected at world: (%.3f, %.3f, %.3f)",
+                msg->x, msg->y, msg->z);
+        });
+
+    // -----------------------------------------------------------------------
+    // is_recyclable — always-on subscriber, continuously overwrites latest value.
+    // Has no value until the first message arrives.
+    // DETECT waits up to 10 s for a message then saves the last value received.
+    // -----------------------------------------------------------------------
+    std::mutex recyclable_mutex;
+    std::optional<bool> latest_recyclable;   // empty until first message received
+    std::optional<bool> saved_recyclable;
+
+    auto recyclable_sub = node->create_subscription<std_msgs::msg::Bool>(
+        "is_recyclable",
+        rclcpp::QoS(10).best_effort().durability_volatile(),
+        [&](const std_msgs::msg::Bool::SharedPtr msg) {
+            std::lock_guard<std::mutex> lock(recyclable_mutex);
+            latest_recyclable = msg->data;
+            RCLCPP_INFO(node->get_logger(), "[recyclable] received: %s",
+                msg->data ? "RECYCLABLE" : "NON-RECYCLABLE");
         });
 
     moveit::planning_interface::MoveGroupInterface arm(node, "ur_onrobot_manipulator");
@@ -656,7 +690,7 @@ int main(int argc, char * argv[]) {
             cmd_cv.wait(lock, [&]() {
                 int c = current_cmd.load();
                 return c==CMD_START||c==CMD_HOME||c==CMD_RESUME||c==CMD_STOP||
-                       c==CMD_LOCATE||!rclcpp::ok();
+                       c==CMD_LOCATE||c==CMD_DETECT||!rclcpp::ok();   // ← CMD_DETECT added
             });
         }
         int cmd_now = current_cmd.load();
@@ -668,6 +702,7 @@ int main(int argc, char * argv[]) {
             valid_jobs.clear(); job_index = 0;
             resume_step = MotionStep::PRE_PICK;
             saved_camera_bottle.reset();
+            saved_recyclable.reset();                  // ← clear recyclability on home
             current_cmd.store(CMD_NONE);
             rclcpp::sleep_for(std::chrono::milliseconds(200));
             executor.jointMove(HOME_JOINTS, "HOME");
@@ -675,7 +710,7 @@ int main(int argc, char * argv[]) {
             continue;
         }
 
-        // ── LOCATE ────────────────────────────────────────────────────────────
+        // ── LOCATE ────────────────────────────────────────────────────────
         if (cmd_now == CMD_LOCATE) {
             current_cmd.store(CMD_NONE);
             if (saved_camera_bottle.has_value()) {
@@ -702,6 +737,33 @@ int main(int argc, char * argv[]) {
                         saved_camera_bottle->x,
                         saved_camera_bottle->y,
                         saved_camera_bottle->z);
+                }
+            }
+            continue;
+        }
+
+        // ── DETECT ────────────────────────────────────────────────────────
+        // Waits until a message arrives on is_recyclable (up to 10 s),
+        // keeps overwriting until the deadline, then saves the last value.
+        if (cmd_now == CMD_DETECT) {
+            current_cmd.store(CMD_NONE);
+            RCLCPP_INFO(logger,
+                "=== DETECT: waiting for is_recyclable message (10 s) ===");
+            auto deadline = node->now() + rclcpp::Duration::from_seconds(10.0);
+            while (rclcpp::ok() && node->now() < deadline) {
+                if (current_cmd == CMD_STOP || current_cmd == CMD_HOME) break;
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+            }
+            {
+                std::lock_guard<std::mutex> lock(recyclable_mutex);
+                if (latest_recyclable.has_value()) {
+                    saved_recyclable = *latest_recyclable;
+                    RCLCPP_INFO(logger, "=== DETECT: saved recyclability = %s ===",
+                        *saved_recyclable ? "RECYCLABLE" : "NON-RECYCLABLE");
+                } else {
+                    RCLCPP_WARN(logger,
+                        "=== DETECT: no message received — defaulting to NON-RECYCLABLE ===");
+                    saved_recyclable = false;
                 }
             }
             continue;
@@ -736,12 +798,43 @@ int main(int argc, char * argv[]) {
                 continue;
             }
             RCLCPP_INFO(logger, "=== At VIEW2. Waiting for Complete Mission... ===");
-            {
-                std::unique_lock<std::mutex> lock(cmd_mutex);
-                cmd_cv.wait(lock, [&]() {
-                    int c = current_cmd.load();
-                    return c==CMD_MISSION||c==CMD_HOME||c==CMD_STOP||!rclcpp::ok();
-                });
+            RCLCPP_INFO(logger, "=== (you may also press Detect Bottle now) ===");
+            // Loop so CMD_DETECT can be serviced while still waiting for CMD_MISSION.
+            while (rclcpp::ok()) {
+                {
+                    std::unique_lock<std::mutex> lock(cmd_mutex);
+                    cmd_cv.wait(lock, [&]() {
+                        int c = current_cmd.load();
+                        return c==CMD_MISSION||c==CMD_DETECT||
+                               c==CMD_HOME||c==CMD_STOP||!rclcpp::ok();
+                    });
+                }
+                int c = current_cmd.load();
+                if (c == CMD_MISSION || c == CMD_HOME || c == CMD_STOP || !rclcpp::ok()) break;
+
+                // CMD_DETECT received while at VIEW2 — wait up to 10 s, save last value.
+                if (c == CMD_DETECT) {
+                    current_cmd.store(CMD_NONE);
+                    RCLCPP_INFO(logger,
+                        "=== DETECT: waiting for is_recyclable message (10 s) ===");
+                    auto deadline = node->now() + rclcpp::Duration::from_seconds(10.0);
+                    while (rclcpp::ok() && node->now() < deadline) {
+                        if (current_cmd == CMD_STOP || current_cmd == CMD_HOME) break;
+                        rclcpp::sleep_for(std::chrono::milliseconds(100));
+                    }
+                    {
+                        std::lock_guard<std::mutex> lock(recyclable_mutex);
+                        if (latest_recyclable.has_value()) {
+                            saved_recyclable = *latest_recyclable;
+                            RCLCPP_INFO(logger, "=== DETECT: saved recyclability = %s ===",
+                                *saved_recyclable ? "RECYCLABLE" : "NON-RECYCLABLE");
+                        } else {
+                            RCLCPP_WARN(logger,
+                                "=== DETECT: no message received — defaulting to NON-RECYCLABLE ===");
+                            saved_recyclable = false;
+                        }
+                    }
+                }
             }
             if (current_cmd.load() != CMD_MISSION) continue;
             cmd_now = CMD_MISSION;
@@ -752,17 +845,16 @@ int main(int argc, char * argv[]) {
             RCLCPP_INFO(logger, "=== MISSION: building job from bottle position ===");
             current_cmd.store(CMD_NONE);
 
+            // ── Resolve bottle position ────────────────────────────────────
             BottlePosition cam_bottle;
 
-            // Use saved position from LOCATE if available
             if (saved_camera_bottle.has_value()) {
                 cam_bottle = *saved_camera_bottle;
                 RCLCPP_INFO(logger,
                     "=== MISSION: using saved LOCATE position (%.3f, %.3f, %.3f) ===",
                     cam_bottle.x, cam_bottle.y, cam_bottle.z);
-                saved_camera_bottle.reset(); // clear after use
+                saved_camera_bottle.reset();
             } else {
-                // Fall back to waiting for a fresh camera point (30s timeout)
                 RCLCPP_INFO(logger,
                     "=== MISSION: no saved position, waiting for camera point (30s) ===");
                 new_camera_point.store(false);
@@ -783,21 +875,46 @@ int main(int argc, char * argv[]) {
                 }
             }
 
+            // ── Resolve recyclability ──────────────────────────────────────
+            // Use the value saved by CMD_DETECT.  If the operator never pressed
+            // Detect (or it timed out), default to non-recyclable and warn.
+            bool bottle_recyclable = false;
+            if (saved_recyclable.has_value()) {
+                bottle_recyclable = *saved_recyclable;
+                saved_recyclable.reset();           // consume — fresh detect needed next cycle
+                RCLCPP_INFO(logger, "=== MISSION: using saved recyclability = %s ===",
+                    bottle_recyclable ? "RECYCLABLE" : "NON-RECYCLABLE");
+            } else {
+                RCLCPP_WARN(logger,
+                    "=== MISSION: no recyclability data — defaulting to NON-RECYCLABLE ===");
+            }
+
             RCLCPP_INFO(logger,
-                "=== MISSION: bottle at world (%.3f, %.3f, %.3f) colour='%s' ===",
-                cam_bottle.x, cam_bottle.y, cam_bottle.z, cam_bottle.colour.c_str());
+                "=== MISSION: bottle at world (%.3f, %.3f, %.3f) recyclable=%s ===",
+                cam_bottle.x, cam_bottle.y, cam_bottle.z,
+                bottle_recyclable ? "YES" : "NO");
 
-            auto known = psi.getKnownObjectNames();
-            if (std::find(known.begin(), known.end(), "ground") == known.end())
-                addBox(psi, "ground", frame, 0.0, 0.0, -0.025, 2.0, 2.0, 0.05);
+            // Remove any leftover bottle objects from previous runs.
+            {
+                auto known = psi.getKnownObjectNames();
+                for (const auto & id : known) {
+                    if (id.rfind("camera_bottle_", 0) == 0 || id.rfind("bottle_", 0) == 0) {
+                        removeObject(psi, scene_pub, id, frame, logger);
+                    }
+                }
+            }
 
-            // Build job list from camera bottle
+
+
+            // ── Sort by recyclability (replaces sortBottlesByColour) ────────
             std::vector<BottlePosition> bottles = {cam_bottle};
-            auto [crate1_bottles, crate2_bottles] = sortBottlesByColour(bottles, logger);
+            auto [crate1_bottles, crate2_bottles] =
+                sortBottlesByRecyclability(bottles, bottle_recyclable, logger);
+
             auto grid1 = buildPlaceGrid(crate1_bottles.size(), CRATE_1);
             auto grid2 = buildPlaceGrid(crate2_bottles.size(), CRATE_2);
 
-            RCLCPP_INFO(logger, "[sort] %s: %zu  |  %s: %zu",
+            RCLCPP_INFO(logger, "[sort] %s (recyclable): %zu  |  %s (non-recyclable): %zu",
                 CRATE_1.label.c_str(), crate1_bottles.size(),
                 CRATE_2.label.c_str(), crate2_bottles.size());
 
@@ -807,13 +924,13 @@ int main(int argc, char * argv[]) {
                 if (computeConfig(crate1_bottles[i], grid1[i], arm, logger))
                     valid_jobs.push_back({crate1_bottles[i], grid1[i]});
                 else
-                    RCLCPP_WARN(logger, "IK failed for camera bottle (crate1) -- skipping");
+                    RCLCPP_WARN(logger, "IK failed for bottle (recyclable/crate1) -- skipping");
             }
             for (size_t i = 0; i < grid2.size(); i++) {
                 if (computeConfig(crate2_bottles[i], grid2[i], arm, logger))
                     valid_jobs.push_back({crate2_bottles[i], grid2[i]});
                 else
-                    RCLCPP_WARN(logger, "IK failed for camera bottle (crate2) -- skipping");
+                    RCLCPP_WARN(logger, "IK failed for bottle (non-recyclable/crate2) -- skipping");
             }
 
             if (valid_jobs.empty()) { RCLCPP_ERROR(logger, "No valid jobs."); continue; }
