@@ -96,8 +96,12 @@ private:
             v.x *= scale; v.y *= scale; v.z *= scale;
         }
 
+        double shifted_height = 0.023; // Adjust this value based on your mesh's original dimensions to ensure it sits on the ground
+
         geometry_msgs::msg::Pose pose;
-        pose.position = point;
+        pose.position.x = point.x;
+        pose.position.y = point.y;
+        pose.position.z = point.z - shifted_height; // Shift Bottle Down to Sit on Ground
         pose.orientation.w = 1.0;
 
         obj.meshes.push_back(mesh_msg);
