@@ -43,11 +43,11 @@ private:
 
         shape_msgs::msg::SolidPrimitive box;
         box.type = box.BOX;
-        box.dimensions = {1.0, 1.0, 0.01}; // X, Y, Z sizes in meters
+        box.dimensions = {0.5, 1.0, 0.01}; // X, Y, Z sizes in meters
 
         geometry_msgs::msg::Pose ground_pose;
         ground_pose.orientation.w = 1.0;
-        ground_pose.position.x = 0.0; // Centered relative to your crates
+        ground_pose.position.x = 0.5; // Centered relative to your crates
         ground_pose.position.y = 0.0;
         ground_pose.position.z = -0.006; // Half of thickness to keep top at z=0
 

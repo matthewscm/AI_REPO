@@ -53,11 +53,7 @@ ros2 launch ur_onrobot_moveit_config ur_onrobot_moveit.launch.py ur_type:=ur3e o
 
 
 
-
-
-
-
-
+ros2 launch ur_onrobot_control start_robot.launch.py   ur_type:=ur3e   robot_ip:=192.168.0.191   use_fake_hardware:=true launch_rviz:=true
 
 
 
