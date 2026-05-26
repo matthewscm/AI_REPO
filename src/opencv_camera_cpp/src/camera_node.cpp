@@ -146,6 +146,11 @@ private:
             label_text = "Blue";
             circle_color = cv::Scalar(255, 0, 0);
         }
+        else if (bottle_class_id_ == 3)
+        {
+            label_text = "Orange";
+            circle_color = cv::Scalar(0, 165, 255);
+        }
         else
         {
             label_text = "Navigating";
