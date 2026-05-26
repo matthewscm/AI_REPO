@@ -47,7 +47,7 @@ private:
 
         geometry_msgs::msg::Pose ground_pose;
         ground_pose.orientation.w = 1.0;
-        ground_pose.position.x = 0.3; // Centered relative to your crates
+        ground_pose.position.x = 0.40; // Centered relative to your crates
         ground_pose.position.y = 0.0;
         ground_pose.position.z = -0.006; // Half of thickness to keep top at z=0
 
