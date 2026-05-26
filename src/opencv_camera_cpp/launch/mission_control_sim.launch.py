@@ -33,7 +33,7 @@ def generate_launch_description():
             'onrobot_type': 'rg2',
             'launch_rviz': 'true', 
             'robot_ip': '192.168.0.191',
-            'fake_hardware': 'true',
+            #'fake_hardware': 'true',
         }.items()
     )
 

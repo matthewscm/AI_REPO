@@ -96,7 +96,7 @@ private:
             v.x *= scale; v.y *= scale; v.z *= scale;
         }
 
-        double shifted_height = 0.023; // Adjust this value based on your mesh's original dimensions to ensure it sits on the ground
+        double shifted_height = 0.23; // Adjust this value based on your mesh's original dimensions to ensure it sits on the ground
 
         geometry_msgs::msg::Pose pose;
         pose.position.x = point.x;
