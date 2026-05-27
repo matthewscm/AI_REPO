@@ -5,7 +5,8 @@
 
 # How to run or test the subsystem independently
 
-# Camera Feed Visualisation: This test reads sample inputs of bottle identification and location of the identified bottle. The data changes the XY location and the colour of the bottle so it should be clearly visualised. 
+# Camera Feed Visualisation:
+This test reads sample inputs of bottle identification and location of the identified bottle. The data changes the XY location and the colour of the bottle so it should be clearly visualised. 
  # BUILD
   a.	cd ~/ros2_ws
   b.	colcon build --symlink-install
@@ -20,7 +21,8 @@
   a.	source install/setup.bash
   b.	ros2 run opencv_camera_cpp bottle_test_publisher
 
-# Mission Control Gui: The node will display the gui with certain buttons. The topic echo should represent the output of the button pressed, 0=Home, 1=Start, 2=Stop, 3=Resume etc. 
+# Mission Control Gui: 
+The node will display the gui with certain buttons. The topic echo should represent the output of the button pressed, 0=Home, 1=Start, 2=Stop, 3=Resume etc. 
  # BUILD
   a.	cd ~/ros2_ws
   b.	colcon build --symlink-install
