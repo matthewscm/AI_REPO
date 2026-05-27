@@ -143,20 +143,21 @@ private:
             cv::Mat hsv_img;
             cv::cvtColor(color_img, hsv_img, cv::COLOR_BGR2HSV);
 
-            cv::Mat mask_red1, mask_red2, mask_red, mask_green, mask_blue;
+            cv::Mat mask_red1, mask_red2, mask_red, mask_green, mask_blue, mask_orange;
 
-            cv::inRange(hsv_img, cv::Scalar(0, 100, 100), cv::Scalar(10, 255, 255), mask_red1);
+            cv::inRange(hsv_img, cv::Scalar(0, 100, 100), cv::Scalar(5, 255, 255), mask_red1);
             cv::inRange(hsv_img, cv::Scalar(160, 100, 100), cv::Scalar(179, 255, 255), mask_red2);
             cv::bitwise_or(mask_red1, mask_red2, mask_red); 
 
             cv::inRange(hsv_img, cv::Scalar(35, 100, 100), cv::Scalar(85, 255, 255), mask_green);
             cv::inRange(hsv_img, cv::Scalar(100, 100, 100), cv::Scalar(130, 255, 255), mask_blue);
+            cv::inRange(hsv_img, cv::Scalar(5, 100, 100), cv::Scalar(17.5, 255, 255), mask_orange);
 
             cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
             cv::morphologyEx(mask_red, mask_red, cv::MORPH_OPEN, kernel);
             cv::morphologyEx(mask_green, mask_green, cv::MORPH_OPEN, kernel);
             cv::morphologyEx(mask_blue, mask_blue, cv::MORPH_OPEN, kernel);
-
+            cv::morphologyEx(mask_orange, mask_orange, cv::MORPH_OPEN, kernel);
             auto getLargestContourInfo = [](const cv::Mat& mask) -> std::pair<double, cv::Rect> {
                 std::vector<std::vector<cv::Point>> contours;
                 cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -175,7 +176,7 @@ private:
             auto red_info = getLargestContourInfo(mask_red);
             auto green_info = getLargestContourInfo(mask_green);
             auto blue_info = getLargestContourInfo(mask_blue);
-
+            auto orange_info = getLargestContourInfo(mask_orange);
             std::string category = "Unknown";
             int class_id = -1;
             cv::Rect best_bbox;
@@ -198,6 +199,12 @@ private:
                 class_id = 2;
                 best_bbox = blue_info.second;
                 box_color = cv::Scalar(255, 0, 0); 
+            }
+            else if (orange_info.first > min_area_threshold) {
+                category = "Orange Cap Bottle";
+                class_id = 3;
+                best_bbox = orange_info.second;
+                box_color = cv::Scalar(0, 165, 255);
             }
 
             cv::Mat display_img = color_img.clone();

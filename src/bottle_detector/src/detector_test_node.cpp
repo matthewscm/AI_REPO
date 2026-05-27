@@ -285,9 +285,10 @@ namespace feature_extractor {
     std::string get_color_name(float h, float s, float v) {
         if (v < 50.0f || s < 40.0f) return "Unknown";
 
-        if (h < 15.0f || h >= 165.0f) return "Red";
+        if (h < 10.0f || h >= 165.0f) return "Red";
         if (h >= 35.0f && h < 85.0f) return "Green";
         if (h >= 85.0f && h < 135.0f) return "Blue";
+        if (h >= 10.0f && h < 35.0f) return "Orange";
         
         return "Unknown";
     }
@@ -515,6 +516,7 @@ private:
                 if (color_name == "Red")   color_int_code = 0;
                 if (color_name == "Green") color_int_code = 1;
                 if (color_name == "Blue")  color_int_code = 2;
+                if (color_name == "Orange") color_int_code = 3;
 
                 // Publish the Integer Message
                 std_msgs::msg::Int32 color_int_msg;
