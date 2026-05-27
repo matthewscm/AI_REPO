@@ -56,6 +56,46 @@ private:
         ground.operation = ground.ADD;
         collision_objects.push_back(ground);
 
+        //--- Add Another Vertical Ground Plane
+        moveit_msgs::msg::CollisionObject ground_side;
+        ground_side.header.frame_id = "base_link";
+        ground_side.id = "side_wall";
+
+        shape_msgs::msg::SolidPrimitive box_side;
+        box_side.type = box_side.BOX;
+        box_side.dimensions = {0.01, 1.0, 0.3}; // X, Y, Z sizes in meters
+
+        geometry_msgs::msg::Pose ground_side_pose;
+        ground_side_pose.orientation.w = 1.0;
+        ground_side_pose.position.x = -0.096; // Centered relative to your crates
+        ground_side_pose.position.y = 0.0;
+        ground_side_pose.position.z = -0.156; // Half of thickness to keep top at z=0
+
+        ground_side.primitives.push_back(box_side);
+        ground_side.primitive_poses.push_back(ground_side_pose);
+        ground_side.operation = ground_side.ADD;
+        collision_objects.push_back(ground_side);
+
+        //--- Add Bench Plane
+        moveit_msgs::msg::CollisionObject bench_plane;
+        bench_plane.header.frame_id = "base_link";
+        bench_plane.id = "bench_plane";
+
+        shape_msgs::msg::SolidPrimitive box_bench;
+        box_bench.type = box_bench.BOX;
+        box_bench.dimensions = {1.5, 1.5, 0.01}; // X, Y, Z sizes in meters
+
+        geometry_msgs::msg::Pose bench_pose;
+        bench_pose.orientation.w = 1.0;
+        bench_pose.position.x = -0.84; // Centered relative to your crates
+        bench_pose.position.y = 0.0;
+        bench_pose.position.z = -0.31; // Half of thickness to keep top at z=0
+
+        bench_plane.primitives.push_back(box_bench);
+        bench_plane.primitive_poses.push_back(bench_pose);
+        bench_plane.operation = bench_plane.ADD;
+        collision_objects.push_back(bench_plane);
+
         // --- 2. ADD THE MESHES ---
         for (const auto& task : mesh_tasks_) {
             moveit_msgs::msg::CollisionObject obj;
