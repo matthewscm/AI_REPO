@@ -23,18 +23,20 @@ public:
         // Path to your bottle STL
         mesh_path_ = "package://simulation_cpp/meshes/bottle.stl";
 
-        // --- Updated ID Mapping (0: Red, 1: Green, 2: Blue) ---
+        // --- Updated ID Mapping (0: Red, 1: Green, 2: Blue, 3: Orange) ---
         id_to_color_name_ = {
             {0, "red"},
             {1, "green"},
-            {2, "blue"}
+            {2, "blue"},
+            {3, "orange"}
         };
 
         // --- Color definitions for MoveIt Visualizer ---
         color_map_ = {
             {"red",    makeColor(0.8f, 0.1f, 0.1f)},
             {"green",  makeColor(0.1f, 0.8f, 0.1f)},
-            {"blue",   makeColor(0.1f, 0.2f, 0.9f)}
+            {"blue",   makeColor(0.1f, 0.2f, 0.9f)},
+            {"orange", makeColor(0.9f, 0.5f, 0.1f)}
         };
 
         // Publisher for updating the PlanningScene colors
@@ -47,7 +49,7 @@ public:
         center_sub_ = this->create_subscription<geometry_msgs::msg::Point>(
             "bottle_center_world", 10, std::bind(&BottleCameraSpawner::center_callback, this, std::placeholders::_1));
             
-        RCLCPP_INFO(this->get_logger(), "Bottle Spawner Started: Monitoring Red(0), Green(1), and Blue(2)");
+        RCLCPP_INFO(this->get_logger(), "Bottle Spawner Started: Monitoring Red(0), Green(1), Blue(2), and Orange(3)");
     }
 
 private:
