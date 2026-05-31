@@ -1,6 +1,7 @@
-# RS2
+# Bottle Recycling Classification - UR3 Pick & Place
 
-Repository for RS2 work.
+Repository for Artifical Intelligence in Robotics final project code, mounted on top of the 
+relevant RS2 project. 
 
 ## Workspace Setup
 
