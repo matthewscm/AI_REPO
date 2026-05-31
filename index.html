@@ -191,51 +191,61 @@
 
 <section class="section">
   <div class="container is-max-desktop">
-
     <div class="columns is-centered">
-      <!-- Matting. -->
       <div class="column">
+    
         <h2 class="title is-3">Results</h2>
+    
+        <!-- Images Row -->
         <div class="columns is-centered">
-          <div class="column">
+    
+          <div class="column is-5">
             <img src="yoloResults.png" alt="YOLO Bottle Detection">
             <p class="has-text-centered">
               <strong>Figure 1.</strong> Real-time YOLOv8 bottle detection showing multiple bottles detected simultaneously.
             </p>
           </div>
-          <div class="column">
+    
+          <div class="column is-5">
             <img src="SVMResults.png" alt="SVM Classification">
             <p class="has-text-centered">
               <strong>Figure 2.</strong> SVM classifier successfully predicting recyclable and non-recyclable bottles from extracted features.
             </p>
           </div>
-          <div class="column content">
-            <p>
-              The integrated bottle sorting system successfully detected and classified bottles in real time 
-              using a combination of YOLOv8 object detection, feature extraction, and SVM classification.
-            </p>
-            <p>
-              The YOLOv8 detector reliably identified multiple bottles within a single camera frame, producing 
-              regular confidence scores of 75+% during testing. Extracted bottle dimensions and HSV colour 
-              features were successfully published through ROS2 topics and used as inputs for the classification 
-              pipeline.
-            </p>
-            <p>
-              The Support Vector Machine (SVM) classifier achieved an average test accuracy of 97.4% across 
-              multiple training iterations. Live testing confirmed that the classifier correctly identified 
-              recyclable and non-recyclable bottles based on the extracted feature vectors.
-            </p>
-            <p>
-              End-to-end system integration was successfully demonstrated, with the detection node publishing 
-              bottle features, the SVM node producing classification predictions, and the final recyclability 
-              status being published as a Boolean ROS2 topic for use by downstream robotic systems.
-            </p>
-          </div>
+    
         </div>
+    
+        <!-- Text Row -->
+        <div class="content">
+    
+          <p>
+            The integrated bottle sorting system successfully detected and classified bottles in real time
+            using a combination of YOLOv8 object detection, feature extraction, and SVM classification.
+          </p>
+    
+          <p>
+            The YOLOv8 detector reliably identified multiple bottles within a single camera frame, producing
+            regular confidence scores of 75+% during testing. Extracted bottle dimensions and HSV colour
+            features were successfully published through ROS2 topics and used as inputs for the classification
+            pipeline.
+          </p>
+    
+          <p>
+            The Support Vector Machine (SVM) classifier achieved an average test accuracy of 97.4% across
+            multiple training iterations. Live testing confirmed that the classifier correctly identified
+            recyclable and non-recyclable bottles based on the extracted feature vectors.
+          </p>
+    
+          <p>
+            End-to-end system integration was successfully demonstrated, with the detection node publishing
+            bottle features, the SVM node producing classification predictions, and the final recyclability
+            status being published as a Boolean ROS2 topic for use by downstream robotic systems.
+          </p>
+    
+        </div>
+    
       </div>
     </div>
-    <!--/ Matting. -->
-
     <!-- Animation. -->
     <div class="columns is-centered">
       <div class="column is-full-width">
