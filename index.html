@@ -254,14 +254,30 @@
         <h3 class="title is-4">Challenges</h3>
         <div class="content has-text-justified">
           <p>
-            1.  TODO @ CONNOR
+            1.  Having correct dependencies and OpenCV 4.9 installed for correct image pre-processing. 
+                Setting the tunable parameters (confidence score and NMS) to ensure bottles are correctly 
+                identified and not duplicated. Finally, the system was initially developed with a YOLOv8n 
+                ONNX model, but lacked the computational accuracy to identify a range of bottles. To 
+                overcome this challenge, the ONNX model was upgraded from the nano model to a larger, 
+                standard model. This lead to a substantial increase in confidence scores for bottles and 
+                accurate bottle detection. 
+          </p>
+          <p>
             2.  There were challenges around the HSV feature extraction when targetting only the dominent 
                 label colour. Elements like see-through bottles, noisy backgrounds or multi-colour labels 
                 would make it dififcult to return a single colour without skewing the hue. This was done 
                 by cropping the range to the typical label region and filtering out near 0 values (black, 
                 white, grey). However outside of our controlled envrionment, these solutions narrow the 
                 scope of what can be correctly detected. 
-            3.  TODO @ CLAIRE
+          </p>
+          <p>
+            3.  Collecting a substantial amount of data to lead to a high quality result. The data 
+                collection required access to a RealSense RGB-D camera so there was limited time to collect
+                data and test it. The data would sometimes pick up other "bottles" in the background 
+                infiltrating the training data so it was important to filter that after developing the 
+                data sheet. 
+          </p>
+          <p>
             4.  TODO @ MADDIE
           </p>
         </div>
@@ -275,6 +291,8 @@
             1. The system currently draws detail from two different camera poses to gather
             sufficient data on the bottle. This sets a certain time and perceptive limitation 
             on the physical control and range of the UR3. 
+          </p>
+          <p>
             2. It only uses colour and dimensional data of the bottle to classify it, this data 
             can be subject to poor lighting conditions in the workspace, reflective labels / 
             bottles and geometric deformations - additionally in a real worl application these 
