@@ -179,7 +179,7 @@
       <div class="column is-four-fifths">
         <h2 class="title is-3">Video</h2>
         <div class="publication-video">
-          <iframe src="https://www.youtube.com/embed/MrKrnHhk8IA?rel=0&amp;showinfo=0"
+          <iframe src="https://www.youtube.com/watch?v=nYkkNrDuthI"
                   frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
         </div>
       </div>
@@ -231,7 +231,7 @@
           </p>
     
           <p>
-            The Support Vector Machine (SVM) classifier achieved an average test accuracy of 97.4% across
+            The Support Vector Machine (SVM) classifier achieved an test accuracy of 97 - 99% accuracy across 
             multiple training iterations. Live testing confirmed that the classifier correctly identified
             recyclable and non-recyclable bottles based on the extracted feature vectors.
           </p>
@@ -277,6 +277,14 @@
                 data and test it. The data would sometimes pick up other "bottles" in the background 
                 infiltrating the training data so it was important to filter that after developing the 
                 data sheet. 
+          </p>
+          <p>
+            4.  Tuning the hyperparameters for C and Gamma. Tried to use the TrainAuto built in function in 
+                Cpp to optimise but produced low accuracy for our Training data. Had to manually tune 
+                hyperparameters to strike a balance between overfitting and underfitting, a bit time consuming 
+                but managed to get a high accuracy. Also, initially was able to achieve 100% accuracy but this 
+                result was deciving due to high C value and overfitting, hence the tuning had to be done to 
+                achieve an acceptable accuracy between 97%-99%. 
           </p>
         </div>
         <br/>
