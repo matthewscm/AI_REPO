@@ -126,15 +126,41 @@ ros2 run ur3e_motion move_to_pose \
 
 ## Dependencies
 
-### ROS2 Packages
+### ROS 2 Packages
 
-- tf2_ros
-- cv_bridge
-- image_transport
-- vision_msgs
-- ros2_control
-- ros2_controllers
-- controller_manager
+Replace `humble` below with your ROS 2 distribution (e.g. `iron`, `jazzy`, etc.)
+
+```bash
+sudo apt update
+sudo apt install -y \
+  ros-humble-tf2-ros \
+  ros-humble-cv-bridge \
+  ros-humble-image-transport \
+  ros-humble-vision-msgs \
+  ros-humble-ros2-control \
+  ros-humble-ros2-controllers \
+  ros-humble-controller-manager
+```
+
+---
+
+### Python / ML Dependencies (SVM + YOLOv8n ONNX)
+
+#### Core ML + Vision Stack
+
+```bash
+pip3 install numpy opencv-python scikit-learn
+```
+
+---
+
+#### YOLOv8n + ONNX Runtime
+
+```bash
+pip3 install ultralytics onnx onnxruntime
+```
+
+---
 
 ### Software
 
